@@ -10,10 +10,30 @@ def get_db_connection():
     return conn
 
 
+def is_write_query(query):
+    keywords = ["INSERT", "UPDATE", "DELETE"]
+    return any(kw in query.upper() for kw in keywords)
+
+
 def execute_query(query):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute(query)
-    data = cur.fetchall()
-    conn.close()
-    return data
+
+    try:
+        cur.execute(query)
+
+        if cur.description:  # SELECT query
+            data = cur.fetchall()
+        else:
+            conn.commit()
+            data = [{"rows_affected": cur.rowcount}]
+
+        return data
+
+    except Exception as e:
+        conn.rollback()
+        raise e
+
+    finally:
+        cur.close()
+        conn.close()

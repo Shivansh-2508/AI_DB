@@ -1,4 +1,5 @@
 from db import execute_query
 
-result = execute_query("SELECT * FROM customers;")
-print("Result:", result)
+query = "SELECT table_name FROM information_schema.tables WHERE table_schema='public';"
+result = execute_query(query)
+print("Tables:", result)
