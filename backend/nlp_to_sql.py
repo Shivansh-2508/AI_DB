@@ -1,11 +1,16 @@
 import os
 from dotenv import load_dotenv
-from together import Together
+import google.generativeai as genai
 
+# Load environment variables
 load_dotenv()
-client = Together(api_key=os.getenv("TOGETHER_API_KEY"))
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# Let write operations through with confirmation
+# Configure Gemini API
+genai.configure(api_key=GOOGLE_API_KEY)
+
+# Initialize the Gemini model
+model = genai.GenerativeModel('gemini-pro')
 
 
 def generate_sql_from_prompt(user_question):
@@ -16,19 +21,13 @@ Return only the raw SQL query without any explanation, markdown, or code formatt
 
 Question: {user_question}
 SQL:
-    """
+"""
 
     try:
-        response = client.chat.completions.create(
-            model="mistralai/Mixtral-8x7B-Instruct-v0.1",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=150,
-        )
+        response = model.generate_content(prompt)
+        sql_query = response.text.strip()
 
-        sql_query = response.choices[0].message.content.strip()
-
-        # Remove markdown if still present
+        # Clean output if markdown/code block present
         if sql_query.startswith("```"):
             sql_query = sql_query.strip("`").replace("sql", "").strip()
 
