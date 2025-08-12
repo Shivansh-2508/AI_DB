@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Database } from "lucide-react";
+import { Database, Sparkles } from "lucide-react";
 import ChatInput from "./ChatInput";
 import MessageList, { Message } from "./MessageList";
 
@@ -9,7 +9,7 @@ export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "system",
-      text: "Hi 👋 Ask me anything about your database.",
+      text: "Hello! I'm here to help you query and explore your database. What would you like to know?",
       isUser: false,
       isError: false,
       timestamp: new Date(),
@@ -41,34 +41,52 @@ export default function ChatContainer() {
       const data = await res.json();
 
       if (!res.ok || data.error) {
-        addMessage({ text: data.error ?? "Unknown error", isError: true });
+        addMessage({ text: data.error ?? "Unable to process your request. Please try again.", isError: true });
       } else {
         let reply = "";
         if (data.message) reply += `${data.message}\n`;
-        if (data.sql) reply += `SQL: ${data.sql}\n`;
-        if (data.result) reply += `Result: ${JSON.stringify(data.result)}`;
+        if (data.sql) reply += `\`\`\`sql\n${data.sql}\n\`\`\`\n`;
+        if (data.result) reply += `**Result:**\n\`\`\`json\n${JSON.stringify(data.result, null, 2)}\n\`\`\``;
         addMessage({ text: reply.trim() });
       }
     } catch {
-      addMessage({ text: "Network error. Please try again.", isError: true });
+      addMessage({ text: "Connection failed. Please check your network and try again.", isError: true });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Card className="w-full max-w-4xl mx-auto h-[80vh] flex flex-col bg-zinc-900 border-zinc-800">
-      <CardHeader className="bg-gradient-to-r from-indigo-700 to-purple-800 border-b border-zinc-800 text-zinc-100">
-        <CardTitle className="flex items-center gap-2 text-base font-semibold">
-          <Database className="h-5 w-5" />
-          Ask Your Database
-        </CardTitle>
-      </CardHeader>
+    <div className="w-full max-w-5xl mx-auto h-[85vh] flex flex-col bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+      <div className="flex-shrink-0 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-b border-slate-200/50 dark:border-slate-700/50 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-500/10 rounded-lg">
+              <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                Database Assistant
+              </h1>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Natural language to SQL
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+            <Sparkles className="h-3 w-3" />
+            <span>AI Powered</span>
+          </div>
+        </div>
+      </div>
 
-      <CardContent className="flex-1 p-0 flex flex-col">
+      <div className="flex-1 min-h-0 bg-slate-50/30 dark:bg-slate-900/30">
         <MessageList messages={messages} isLoading={loading} />
+      </div>
+      
+      <div className="flex-shrink-0">
         <ChatInput onSend={sendToBackend} disabled={loading} />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
