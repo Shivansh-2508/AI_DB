@@ -1,7 +1,7 @@
 "use client";
 import { cn } from "@/lib/utils";
 import { User, Bot, AlertCircle } from "lucide-react";
-import { useState } from "react";
+import { useState, ReactElement } from "react";
 
 export interface MessageBubbleProps {
   text: string;
@@ -21,7 +21,7 @@ export default function MessageBubble({
 
     // Check for code blocks first
     const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-    const parts: (string | JSX.Element)[] = [];
+    const parts: (string | ReactElement)[] = [];
     let lastIndex = 0;
     let match;
 
@@ -64,7 +64,7 @@ export default function MessageBubble({
     return parts;
   };
 
-  const processInlineFormatting = (text: string, key: number) => {
+  const processInlineFormatting = (text: string, key: number): ReactElement => {
     const inlineCodeRegex = /`([^`]+)`/g;
     const boldRegex = /\*\*(.*?)\*\*/g;
 
