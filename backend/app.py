@@ -72,6 +72,9 @@ def ask():
         if not schema:
             schema = cache_user_schema(user_id)
 
+        if not isinstance(schema, dict):
+            return jsonify({"error": "Invalid schema format"}), 500
+
         # Handle confirmation for pending write queries
         if session_id in pending_queries:
             if user_input.lower() in ['yes', 'y', 'confirm']:
