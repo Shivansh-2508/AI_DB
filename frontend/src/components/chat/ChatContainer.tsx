@@ -1,23 +1,18 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getUserEmail } from "@/utils/supabase/getUserEmail";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Database, Sparkles } from "lucide-react";
 import ChatInput from "./ChatInput";
 import MessageList, { Message } from "./MessageList";
 
 export default function ChatContainer() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "system",
-      text: "Hello! I'm here to help you query and explore your database. What would you like to know?",
-      isUser: false,
-      isError: false,
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sessionId] = useState(() => Math.random().toString(36).slice(2));
 
+  // Add a new message to chat
   const addMessage = (msg: Omit<Message, "id" | "timestamp">) => {
     setMessages((m) => [
       ...m,
@@ -25,6 +20,72 @@ export default function ChatContainer() {
     ]);
   };
 
+  // Fetch user email on mount
+  useEffect(() => {
+    async function fetchEmail() {
+      const email = await getUserEmail();
+      setUserEmail(email);
+
+      setMessages([
+        {
+          id: "system",
+          text: email
+            ? `Hello ${email}! I'm here to help you query and explore your database. What would you like to know?`
+            : "Hello! I'm here to help you query and explore your database. What would you like to know?",
+          isUser: false,
+          isError: false,
+          timestamp: new Date(),
+        },
+      ]);
+    }
+    fetchEmail();
+  }, []);
+
+  // Prefetch schema once userEmail is available
+  useEffect(() => {
+    if (!userEmail) return;
+
+    async function prefetchSchema() {
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: userEmail }),
+          }
+        );
+
+        const data = await res.json();
+        if (res.ok) {
+          console.log("Schema cached:", data.schema_summary);
+          addMessage({
+            text: "✅ Database schema cached and ready for queries.",
+            isUser: false,
+            isError: false,
+          });
+        } else {
+          console.error("Schema prefetch failed:", data.error);
+          addMessage({
+            text: "⚠️ Failed to prefetch schema. Queries may not work correctly.",
+            isUser: false,
+            isError: true,
+          });
+        }
+      } catch (err) {
+        console.error("Prefetch error:", err);
+        addMessage({
+          text: "⚠️ Schema prefetch request failed.",
+          isUser: false,
+          isError: true,
+        });
+      }
+    }
+
+    prefetchSchema();
+  }, [userEmail]);
+
+  // Send message to backend
   const sendToBackend = async (text: string) => {
     addMessage({ text, isUser: true });
     setLoading(true);
@@ -35,13 +96,21 @@ export default function ChatContainer() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text, session_id: sessionId }),
+          body: JSON.stringify({
+            message: text,
+            session_id: sessionId,
+            email: userEmail,
+          }),
         }
       );
+
       const data = await res.json();
 
       if (!res.ok || data.error) {
-        addMessage({ text: data.error ?? "Unable to process your request. Please try again.", isError: true });
+        addMessage({
+          text: data.error ?? "Unable to process your request. Please try again.",
+          isError: true,
+        });
       } else {
         let reply = "";
         if (data.message) reply += `${data.message}\n`;
@@ -50,7 +119,10 @@ export default function ChatContainer() {
         addMessage({ text: reply.trim() });
       }
     } catch {
-      addMessage({ text: "Connection failed. Please check your network and try again.", isError: true });
+      addMessage({
+        text: "Connection failed. Please check your network and try again.",
+        isError: true,
+      });
     } finally {
       setLoading(false);
     }
@@ -58,6 +130,7 @@ export default function ChatContainer() {
 
   return (
     <div className="w-full max-w-5xl mx-auto h-[85vh] flex flex-col bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+      {/* Header */}
       <div className="flex-shrink-0 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-b border-slate-200/50 dark:border-slate-700/50 px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -80,10 +153,12 @@ export default function ChatContainer() {
         </div>
       </div>
 
+      {/* Messages */}
       <div className="flex-1 min-h-0 bg-slate-50/30 dark:bg-slate-900/30">
         <MessageList messages={messages} isLoading={loading} />
       </div>
-      
+
+      {/* Input */}
       <div className="flex-shrink-0">
         <ChatInput onSend={sendToBackend} disabled={loading} />
       </div>
