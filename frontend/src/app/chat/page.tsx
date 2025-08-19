@@ -21,7 +21,7 @@ export default function ChatPage() {
       }
     };
     checkUser();
-  }, []);
+  }, [router, supabase.auth]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

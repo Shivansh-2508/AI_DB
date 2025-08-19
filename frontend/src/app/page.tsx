@@ -1,10 +1,9 @@
 
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { LoginForm } from "@/components/login/loginForm";
-import { SignUpForm } from "@/components/signup/SignUpForm";
 
 export default function Home() {
   const router = useRouter();
@@ -20,9 +19,7 @@ export default function Home() {
       }
     };
     checkUser();
-  }, []);
-
-  const [showLogin, setShowLogin] = useState(true);
+  }, [router, supabase.auth]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 via-white to-purple-100 dark:from-slate-800 dark:via-slate-900 dark:to-slate-800 p-4">
