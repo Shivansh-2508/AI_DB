@@ -16,6 +16,18 @@ interface ApiResponse {
   history?: Record<string, unknown>[];
 }
 
+// Backend message shape returned by GET /chat/:sessionId
+interface BackendMessage {
+  message_id?: string;
+  messageId?: string;
+  id?: string;
+  content?: string;
+  text?: string;
+  role?: string;
+  type?: string;
+  timestamp?: string;
+}
+
 interface SessionState {
   isActive: boolean;
   lastActivity: Date;
@@ -28,6 +40,7 @@ export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [sessionState, setSessionState] = useState<SessionState>({
     isActive: true,
     lastActivity: new Date(),
@@ -37,9 +50,20 @@ export default function ChatContainer() {
   
   // Phase 3: Persistent session ID with cleanup
   const [sessionId] = useState(() => {
-    const id = Math.random().toString(36).slice(2);
-    console.log(`🔄 New session created: ${id}`);
-    return id;
+    try {
+      const existing = localStorage.getItem("chat_session_id");
+      if (existing) return existing;
+    } catch {
+      // localStorage might be unavailable in some environments (SSR/locked down)
+    }
+
+    const newId = (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+
+    try { localStorage.setItem("chat_session_id", newId); } catch { /* ignore */ }
+    console.log(`🔄 New session created: ${newId}`);
+    return newId;
   });
 
   // Phase 3: Activity tracking and cleanup
@@ -70,30 +94,74 @@ export default function ChatContainer() {
 
   // Phase 3: Clear chat history
   const clearChatHistory = useCallback(async () => {
+    setClearing(true);
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/clear`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/clear`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId }),
       });
-      
-      setMessages([]);
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const msg = data && data.error ? data.error : 'Failed to clear chat on server';
+        console.error(msg);
+        // show transient error message in chat using state update
+        setMessages(prev => [
+          {
+            id: generateMessageId(),
+            text: `⚠️ ${msg}`,
+            isUser: false,
+            isError: true,
+            timestamp: new Date(),
+            type: 'error'
+          },
+          ...prev
+        ]);
+        return;
+      }
+
+      // Successful clear: update local state with a single system message
+      const sysMsg: Message = {
+        id: generateMessageId(),
+        text: '🧹 Chat history cleared.',
+        isUser: false,
+        isError: false,
+        timestamp: new Date(),
+        type: 'system'
+      };
+
+      setMessages([sysMsg]);
       setSessionState(prev => ({ 
         ...prev, 
         messageCount: 0, 
         awaitingConfirmation: false,
         pendingWrite: undefined 
       }));
-      
+
       // Reset message ID tracking
       usedMessageIds.current.clear();
       messageIdCounterRef.current = 0;
-      
+
       console.log(`🧹 Chat history cleared for session: ${sessionId}`);
-    } catch {
-      console.error("Failed to clear chat history");
+    } catch (err) {
+      console.error('Failed to clear chat history', err);
+      setMessages(prev => [
+        {
+          id: generateMessageId(),
+          text: '⚠️ Failed to clear chat history. Check server.',
+          isUser: false,
+          isError: true,
+          timestamp: new Date(),
+          type: 'error'
+        },
+        ...prev
+      ]);
+    } finally {
+      setClearing(false);
     }
-  }, [sessionId]);
+  }, [sessionId, generateMessageId]);
 
   // Phase 3: Enhanced message management with types
   const addMessage = useCallback((msg: Omit<Message, "id" | "timestamp"> & { type?: "user" | "assistant" | "system" | "error" }) => {
@@ -108,22 +176,30 @@ export default function ChatContainer() {
     setMessages((m) => {
       const updated = [...m, newMessage];
       
-      // Phase 3: Client-side message trimming (keep last 100 messages)
       if (updated.length > 100) {
         const systemMessages = updated.filter(msg => msg.type === "system").slice(-5);
         const recentMessages = updated.slice(-90);
-        
-        // Clean up used IDs for removed messages
         const remainingMessages = [...systemMessages, ...recentMessages];
-        const remainingIds = new Set(remainingMessages.map(msg => msg.id));
-        usedMessageIds.current = remainingIds;
-        
+        usedMessageIds.current = new Set(remainingMessages.map(msg => msg.id));
         return remainingMessages;
       }
       
       return updated;
     });
-  }, [generateMessageId]);
+
+    // Persist to backend
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: userEmail,
+        sessionId: sessionId,
+        messageId: newMessage.id,
+        content: newMessage.text,
+        role: msg.type || "assistant"
+      })
+    }).catch(err => console.error("Failed to save message to backend", err));
+}, [generateMessageId, sessionId, userEmail]);
 
   const updateActivity = useCallback(() => {
     // Only set isActive to true if not currently inactive
@@ -210,28 +286,94 @@ export default function ChatContainer() {
     }
   };
 
-  // Fetch user email on mount
+  // Fetch user email on mount (only set email here; don't overwrite messages)
   useEffect(() => {
     async function fetchEmail() {
       const email = await getUserEmail();
       setUserEmail(email);
-
-      setMessages([
-        {
-          id: "welcome-initial",
-          text: email
-            ? `Hello ${email}! I'm here to help you query and explore your database. What would you like to know?`
-            : "Hello! I'm here to help you query and explore your database. What would you like to know?",
-          isUser: false,
-          isError: false,
-          timestamp: new Date(),
-          type: "system"
-        },
-      ]);
+      // Do NOT set welcome message here to avoid overwriting persisted history loaded later
     }
     fetchEmail();
     updateActivity();
   }, [updateActivity]);
+
+  // --- New: load persisted chat history from backend as soon as we have a sessionId ---
+  // This runs regardless of whether the userEmail is available so anonymous sessions
+  // still restore their chat history on reload.
+  const persistedLoadedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHistory() {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/${sessionId}`);
+        const data = await res.json();
+        if (cancelled) return;
+
+        const history = data.history || [];
+        if (!Array.isArray(history) || history.length === 0) {
+          // No persisted messages — show welcome message once
+          if (!persistedLoadedRef.current) {
+            setMessages([
+              {
+                id: "welcome-initial",
+                text: userEmail
+                  ? `Hello ${userEmail}! I'm here to help you query and explore your database. What would you like to know?`
+                  : "Hello! I'm here to help you query and explore your database. What would you like to know?",
+                isUser: false,
+                isError: false,
+                timestamp: new Date(),
+                type: "system",
+              },
+            ]);
+          }
+          persistedLoadedRef.current = true;
+          return; // nothing persisted
+        }
+
+        // Map backend rows to local Message shape
+        const mapped: Message[] = history.map((h: BackendMessage) => {
+          const id = h.message_id || h.messageId || h.id || generateMessageId();
+          // ensure used ids tracked
+          usedMessageIds.current.add(id);
+
+          const timestamp = h.timestamp ? new Date(h.timestamp) : new Date();
+          const isUser = (h.type === "user" || h.role === "user");
+          const isError = (h.type === "error" || h.role === "error");
+
+          return {
+            id,
+            text: h.text || h.content || "",
+            isUser,
+            isError,
+            timestamp,
+            type: h.type || h.role || (isUser ? "user" : "assistant"),
+          } as Message;
+        });
+
+        // Update message counter to avoid id collisions for newly generated ids
+        messageIdCounterRef.current = Math.max(messageIdCounterRef.current, mapped.length);
+
+        // Replace messages only if we haven't already loaded persisted history
+        setMessages(mapped);
+
+        // update session state counts
+        setSessionState(prev => ({ ...prev, messageCount: mapped.length }));
+
+        persistedLoadedRef.current = true;
+        console.log(`✅ Loaded ${mapped.length} persisted messages for session ${sessionId}`);
+      } catch (err) {
+        console.error("Failed to load persisted chat history:", err);
+      }
+    }
+
+    loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, generateMessageId, userEmail]);
 
   // Prefetch schema with enhanced error handling
   useEffect(() => {
@@ -277,6 +419,7 @@ export default function ChatContainer() {
           text: "⚠️ Schema prefetch request failed.",
           type: "error"
         });
+    
       }
     }
 
@@ -438,39 +581,54 @@ export default function ChatContainer() {
             
             {/* Modern Status Indicators */}
             <div className="flex items-center gap-3">
-              {/* Session Status */}
-              <div className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium transition-all duration-300 ${
-                sessionState.isActive 
-                  ? 'bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-950/50 dark:to-green-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700/50 shadow-lg shadow-emerald-500/10' 
-                  : 'bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/50 dark:to-rose-950/50 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-700/50 shadow-lg shadow-red-500/10'
-              }`}>
-                {sessionState.isActive ? (
-                  <>
-                    <CheckCircle className="h-3.5 w-3.5" />
-                    <span>Active Session</span>
-                  </>
-                ) : (
-                  <>
-                    <Clock className="h-3.5 w-3.5" />
-                    <span>Inactive</span>
-                  </>
-                )}
-              </div>
-              
-              {/* Confirmation Status */}
-              {sessionState.awaitingConfirmation && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/50 dark:to-yellow-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/50 shadow-lg shadow-amber-500/10 animate-pulse">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  <span>Awaiting Confirmation</span>
-                </div>
-              )}
-              
-              {/* AI Badge */}
-              <div className="flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/50 dark:to-purple-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700/50 shadow-lg shadow-indigo-500/10">
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>AI Powered</span>
-              </div>
-            </div>
+               {/* Session Status */}
+               <div className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium transition-all duration-300 ${
+                 sessionState.isActive 
+                   ? 'bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-950/50 dark:to-green-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700/50 shadow-lg shadow-emerald-500/10' 
+                   : 'bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/50 dark:to-rose-950/50 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-700/50 shadow-lg shadow-red-500/10'
+               }`}>
+                 {sessionState.isActive ? (
+                   <>
+                     <CheckCircle className="h-3.5 w-3.5" />
+                     <span>Active Session</span>
+                   </>
+                 ) : (
+                   <>
+                     <Clock className="h-3.5 w-3.5" />
+                     <span>Inactive</span>
+                   </>
+                 )}
+               </div>
+               
+               {/* Confirmation Status */}
+               {sessionState.awaitingConfirmation && (
+                 <div className="flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/50 dark:to-yellow-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/50 shadow-lg shadow-amber-500/10 animate-pulse">
+                   <AlertTriangle className="h-3.5 w-3.5" />
+                   <span>Awaiting Confirmation</span>
+                 </div>
+               )}
+               
+               {/* AI Badge */}
+               <div className="flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/50 dark:to-purple-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700/50 shadow-lg shadow-indigo-500/10">
+                 <Sparkles className="h-3.5 w-3.5" />
+                 <span>AI Powered</span>
+               </div>
+
+               {/* Clear Chat Button (placed to the right near logout area) */}
+               <button
+                 type="button"
+                 disabled={clearing}
+                 onClick={() => {
+                   if (typeof window !== 'undefined' && window.confirm('Clear all chat history for this session? This will delete messages from the database and cannot be undone.')) {
+                     clearChatHistory();
+                   }
+                 }}
+                 className="ml-2 px-3 py-2 rounded-md text-xs font-medium bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:hover:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-700/30 shadow-sm"
+                 aria-label="Clear chat history"
+               >
+                 {clearing ? 'Clearing…' : 'Clear Chat'}
+               </button>
+             </div>
           </div>
         </div>
 
