@@ -14,7 +14,7 @@ from nlp_to_sql import generate_sql_from_chat_history, maybe_generate_clarifier,
 
 app = Flask(__name__)
 # Allow CORS from the frontend during local development (preflight + credentials)
-CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "http://127.0.0.1:3000"]}},
+CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "http://127.0.0.1:3000", "https://ai-db-one.vercel.app"]}},
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
@@ -48,8 +48,10 @@ def normalize_history(raw_history):
     for entry in (raw_history or []):
         if isinstance(entry, dict):
             role = entry.get('role') or entry.get('type') or 'assistant'
-            content = entry.get('content') or entry.get('text') or entry.get('message') or ''
-            message_id = entry.get('message_id') or entry.get('messageId') or entry.get('id')
+            content = entry.get('content') or entry.get(
+                'text') or entry.get('message') or ''
+            message_id = entry.get('message_id') or entry.get(
+                'messageId') or entry.get('id')
             timestamp = entry.get('timestamp') or entry.get('time')
             normalized.append({
                 'role': role,
@@ -59,7 +61,8 @@ def normalize_history(raw_history):
             })
         else:
             # unexpected format: stringify
-            normalized.append({'role': 'assistant', 'content': str(entry), 'message_id': None, 'timestamp': None})
+            normalized.append({'role': 'assistant', 'content': str(
+                entry), 'message_id': None, 'timestamp': None})
     return normalized
 
 
