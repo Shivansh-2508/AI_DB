@@ -7,6 +7,7 @@ from threading import Lock
 import json
 import datetime
 import threading
+from decimal import Decimal
 
 load_dotenv()
 
@@ -32,6 +33,20 @@ def save_message(session_id, message_id, content, role):
     conn = get_db_connection()
     try:
         cur = conn.cursor()
+
+        # If content is not a plain string, serialize to JSON so structured results survive DB storage.
+        if not isinstance(content, str):
+            def _default(o):
+                if isinstance(o, (datetime.date, datetime.datetime)):
+                    return o.isoformat()
+                if isinstance(o, Decimal):
+                    return float(o)
+                return str(o)
+
+            content_to_store = json.dumps(content, default=_default)
+        else:
+            content_to_store = content
+
         # Use INSERT ... ON CONFLICT DO UPDATE if message_id is unique; otherwise just insert
         if message_id:
             cur.execute(
@@ -40,12 +55,12 @@ def save_message(session_id, message_id, content, role):
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT (message_id) DO UPDATE SET content = EXCLUDED.content, role = EXCLUDED.role
                 """,
-                (session_id, message_id, content, role),
+                (session_id, message_id, content_to_store, role),
             )
         else:
             cur.execute(
                 "INSERT INTO chat_messages (session_id, content, role) VALUES (%s, %s, %s)",
-                (session_id, content, role),
+                (session_id, content_to_store, role),
             )
         conn.commit()
         cur.close()
@@ -64,15 +79,25 @@ def get_chat_history(session_id):
         )
         rows = cur.fetchall()
         cur.close()
-        return [
-            {
+        parsed = []
+        for r in rows:
+            raw_content = r[1]
+            parsed_content = raw_content
+            # Try to parse JSON content that we may have stored earlier
+            if isinstance(raw_content, str):
+                try:
+                    parsed_content = json.loads(raw_content)
+                except Exception:
+                    parsed_content = raw_content
+
+            parsed.append({
                 "message_id": r[0],
-                "content": r[1],
+                "content": parsed_content,
                 "role": r[2],
                 "timestamp": r[3].isoformat() if hasattr(r[3], 'isoformat') else r[3]
-            }
-            for r in rows
-        ]
+            })
+
+        return parsed
     finally:
         conn.close()
 

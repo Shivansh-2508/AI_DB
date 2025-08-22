@@ -31,30 +31,59 @@ export default function TableView({ results }: { results: unknown }) {
   const [rowLimit, setRowLimit] = useState<number | "all">(50);
 
   const tableData = useMemo(() => {
-    // Support two shapes:
-    // 1) legacy: results is Array<row>
-    // 2) new: results is { columns?: string[], rows: Array<row> }
+    // Normalize results into { columns: string[], rows: Array<Record<string,unknown>> }
     if (Array.isArray(results)) {
-      const rows = (results as AnyObject[]).map(r => (r ?? {}) as AnyObject);
-      const columns = Array.from(rows.reduce((set, r) => {
-        Object.keys(r).forEach(k => set.add(k));
-        return set;
-      }, new Set<string>()));
+      // legacy: array of rows (objects) or values
+      const rows = (results as unknown[]).map((r) => {
+        if (r && typeof r === "object" && !Array.isArray(r)) return r as AnyObject;
+        return { value: r } as AnyObject;
+      });
+
+      const columns = Array.from(
+        rows.reduce((set, r) => {
+          Object.keys(r).forEach((k) => set.add(k));
+          return set;
+        }, new Set<string>())
+      );
+
       return { columns, rows };
     }
 
-  if (results && typeof results === "object" && Array.isArray(((results as unknown) as { rows?: unknown }).rows)) {
-      const rows = ((results as unknown) as { rows: AnyObject[] }).rows.map((r: AnyObject) => (r ?? {}) as AnyObject);
-        // If the backend provided an explicit columns array, use it (preserves DB order).
-        const providedCols = Array.isArray(((results as unknown) as { columns?: unknown }).columns)
-          ? (((results as unknown) as { columns?: unknown }).columns as unknown[]).map((v) => String(v))
-          : null;
-      const derivedCols = Array.from(rows.reduce((set, r) => {
-        Object.keys(r).forEach(k => set.add(k));
-        return set;
-      }, new Set<string>()));
-      const columns = providedCols && providedCols.length ? providedCols : derivedCols;
-      return { columns, rows };
+    // New structured shape: { columns?: string[], rows: Array<object|array> }
+    if (results && typeof results === "object") {
+      const maybe = results as unknown as { columns?: unknown; rows?: unknown };
+      if (Array.isArray(maybe.rows)) {
+        const rawRows = maybe.rows as unknown[];
+        const providedCols = Array.isArray(maybe.columns)
+          ? (maybe.columns as unknown[]).map((c) => String(c))
+          : undefined;
+
+        const normalizedRows: AnyObject[] = rawRows.map((r) => {
+          if (Array.isArray(r)) {
+            // Map positional array to object using providedCols when available.
+            if (providedCols && providedCols.length >= r.length) {
+              const obj: AnyObject = {};
+              (r as unknown[]).forEach((val, idx) => {
+                obj[providedCols[idx]] = val;
+              });
+              return obj;
+            }
+            // Fallback: numeric column names
+            const obj: AnyObject = {};
+            (r as unknown[]).forEach((val, idx) => {
+              obj[`col_${idx}`] = val;
+            });
+            return obj;
+          }
+
+          if (r && typeof r === "object") return r as AnyObject;
+          return { value: r } as AnyObject;
+        });
+
+        const derivedCols = normalizedRows.length > 0 ? Object.keys(normalizedRows[0]) : [];
+        const columns = providedCols && providedCols.length ? providedCols : derivedCols;
+        return { columns, rows: normalizedRows };
+      }
     }
 
     return null;
@@ -87,18 +116,17 @@ export default function TableView({ results }: { results: unknown }) {
 
     return (
       <div className="bg-white rounded-lg border border-gray-200 p-4 my-4">
-        <div className="text-sm text-gray-700 font-medium mb-3">
-          {summarizeResults(results)}
-        </div>
+        <div className="text-sm text-gray-700 font-medium mb-3">{summarizeResults(results)}</div>
         <div className="flex flex-wrap gap-2 items-center">
           <button
-            onClick={() => setShowJson(v => !v)}
+            onClick={() => setShowJson((v) => !v)}
             className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-sm font-medium transition-colors"
             type="button"
           >
             {showJson ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             {showJson ? "Hide JSON" : "View JSON"}
           </button>
+
           <button
             onClick={copyJson}
             className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-sm font-medium transition-colors"
@@ -108,6 +136,7 @@ export default function TableView({ results }: { results: unknown }) {
             <Copy className="w-3 h-3" />
             Copy JSON
           </button>
+
           <button
             onClick={downloadJson}
             className="inline-flex items-center gap-1 px-2 py-1 bg-gray-800 hover:bg-gray-900 text-white rounded text-sm font-medium transition-colors"
@@ -120,9 +149,7 @@ export default function TableView({ results }: { results: unknown }) {
         </div>
         {showJson && (
           <div className="mt-3 bg-gray-900 rounded p-3 overflow-auto">
-            <pre className="text-xs text-gray-100 font-mono">
-              {jsonText}
-            </pre>
+            <pre className="text-xs text-gray-100 font-mono">{jsonText}</pre>
           </div>
         )}
       </div>
@@ -148,7 +175,7 @@ export default function TableView({ results }: { results: unknown }) {
       return s.includes(",") || s.includes("\n") || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header = columns.join(",");
-  const lines = dataRows.map((r: AnyObject) => columns.map((c: string) => esc(r[c])).join(","));
+    const lines = dataRows.map((r: AnyObject) => columns.map((c: string) => esc(r[c])).join(","));
     return [header, ...lines].join("\n");
   };
 
@@ -180,9 +207,7 @@ export default function TableView({ results }: { results: unknown }) {
             {effectiveRows.length} of {filteredRows.length} rows
           </div>
           {filteredRows.length !== (tableData?.rows?.length ?? 0) && (
-            <div className="text-xs text-gray-500">
-              (filtered from {tableData?.rows?.length ?? 0} total)
-            </div>
+            <div className="text-xs text-gray-500">(filtered from {tableData?.rows?.length ?? 0} total)</div>
           )}
         </div>
 
@@ -205,16 +230,16 @@ export default function TableView({ results }: { results: unknown }) {
             </div>
           </div>
 
-          <button 
-            onClick={copyCsv} 
+          <button
+            onClick={copyCsv}
             className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50 transition-colors"
           >
             <Copy className="w-3 h-3" />
             Copy CSV
           </button>
 
-          <button 
-            onClick={downloadCsv} 
+          <button
+            onClick={downloadCsv}
             className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition-colors"
           >
             <Download className="w-3 h-3" />
@@ -229,11 +254,11 @@ export default function TableView({ results }: { results: unknown }) {
           <thead className="bg-gray-100">
             <tr>
               {columns.map((col: string) => (
-                <th 
-                  key={col} 
-                  className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200 last:border-r-0"
+                <th
+                  key={col}
+                  className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200 last:border-r-0 whitespace-nowrap"
                 >
-                  <div className="truncate max-w-[20ch]" title={col}>
+                  <div className="truncate max-w-[200px]" title={col}>
                     {col}
                   </div>
                 </th>
@@ -247,7 +272,7 @@ export default function TableView({ results }: { results: unknown }) {
                   const cell = row[col];
                   let display = "";
                   let isNumeric = false;
-                  
+
                   if (cell === null || typeof cell === "undefined") {
                     display = "";
                   } else if (typeof cell === "number") {
@@ -255,20 +280,24 @@ export default function TableView({ results }: { results: unknown }) {
                     display = String(cell);
                     isNumeric = true;
                   } else if (typeof cell === "object") {
-                    display = JSON.stringify(cell);
+                    try {
+                      display = JSON.stringify(cell);
+                    } catch {
+                      display = String(cell);
+                    }
                   } else {
                     display = String(cell);
                     isNumeric = !isNaN(Number(display)) && display.trim() !== "";
                   }
 
                   return (
-                    <td 
-                      key={col} 
-                      className={`px-3 py-2 text-sm border-r border-gray-100 last:border-r-0 ${
+                    <td
+                      key={col}
+                      className={`px-4 py-3 text-sm border-r border-gray-100 last:border-r-0 whitespace-nowrap ${
                         isNumeric ? 'text-right font-medium text-gray-900' : 'text-left text-gray-700'
                       }`}
                     >
-                      <div className="truncate max-w-[20ch]" title={display || 'null'}>
+                      <div className="truncate max-w-[200px]" title={display || 'null'}>
                         {display || <span className="text-gray-400 italic text-xs">null</span>}
                       </div>
                     </td>

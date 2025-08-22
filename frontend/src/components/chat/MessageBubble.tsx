@@ -11,7 +11,16 @@ export default function MessageBubble({
   text,
 }: MessageBubbleProps) {
   const renderContent = (content: string) => {
-    if (!content) return content;
+    if (content === null || content === undefined) return null;
+    // If content is not a string (shouldn't usually happen because ChatContainer normalizes),
+    // render a safe JSON string representation.
+    if (typeof content !== 'string') {
+      try {
+        return <span>{JSON.stringify(content)}</span>;
+      } catch {
+        return <span>{String(content)}</span>;
+      }
+    }
 
     // Check for code blocks first
     const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
@@ -71,8 +80,11 @@ export default function MessageBubble({
     const boldRegex = /\*\*(.*?)\*\*/g;
 
     let processed = text;
-    processed = processed.replace(boldRegex, '<strong class="font-medium">$1</strong>');
-    processed = processed.replace(inlineCodeRegex, '<code class="px-2 py-1 rounded text-xs font-mono border" style="background-color: #162A2C; border-color: #D3C3B9; color: #FEFCF6;">$1</code>');
+    // Only call replace when processed is a string
+    if (typeof processed === 'string') {
+      processed = processed.replace(boldRegex, '<strong class="font-medium">$1</strong>');
+      processed = processed.replace(inlineCodeRegex, '<code class="px-2 py-1 rounded text-xs font-mono border" style="background-color: #162A2C; border-color: #D3C3B9; color: #FEFCF6;">$1</code>');
+    }
     
     return <span key={key} dangerouslySetInnerHTML={{ __html: processed }} />;
   };

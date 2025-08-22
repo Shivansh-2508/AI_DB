@@ -355,12 +355,72 @@ export default function ChatContainer() {
           const isUser = (h.type === "user" || h.role === "user");
           const isError = (h.type === "error" || h.role === "error");
 
+          // If the backend stored a structured payload in `content` (e.g. { type: 'results', rows, columns, sql })
+          // restore results/sql into the message object and convert text to a safe string summary.
+          let textVal: string = "";
+          let resultsVal: unknown = h.results ?? undefined;
+          let sqlVal: string | undefined = h.sql ?? undefined;
+
+          if (h.text && typeof h.text === 'string') {
+            textVal = h.text;
+          }
+
+          if (h.content && typeof h.content !== 'string') {
+            try {
+              const contentObj = h.content as unknown as Record<string, unknown>;
+              if (contentObj.type === 'results' && Array.isArray(contentObj.rows)) {
+                // Preserve full structured shape (columns + rows) and normalize rows so that
+                // every row is an object keyed by column name. This fixes misalignment when
+                // rows were stored as arrays of values.
+                const providedCols = Array.isArray(contentObj.columns)
+                  ? (contentObj.columns as unknown[]).map((c) => String(c))
+                  : undefined;
+
+                const rawRows = contentObj.rows as unknown[];
+                const normalizedRows: Record<string, unknown>[] = rawRows.map((r) => {
+                  if (Array.isArray(r)) {
+                    // Map positional array to object using providedCols when available.
+                    if (providedCols && providedCols.length >= r.length) {
+                      const obj: Record<string, unknown> = {};
+                      (r as unknown[]).forEach((val, idx) => { obj[providedCols[idx]] = val; });
+                      return obj;
+                    }
+                    // Fallback: create numeric column names
+                    const obj: Record<string, unknown> = {};
+                    (r as unknown[]).forEach((val, idx) => { obj[`col_${idx}`] = val; });
+                    return obj;
+                  }
+
+                  if (r && typeof r === 'object') return r as Record<string, unknown>;
+                  return { value: r };
+                });
+
+                // If providedCols was missing, derive columns from first normalized row
+                const derivedCols = normalizedRows.length > 0 ? Object.keys(normalizedRows[0]) : [];
+                const finalCols = providedCols && providedCols.length ? providedCols : derivedCols;
+
+                resultsVal = { columns: finalCols, rows: normalizedRows } as unknown;
+                sqlVal = sqlVal ?? (typeof contentObj.sql === 'string' ? contentObj.sql : (contentObj.sql ? String(contentObj.sql) : undefined));
+                // keep a concise human-readable summary in the bubble
+                textVal = textVal || `Results: ${normalizedRows.length} row${normalizedRows.length === 1 ? '' : 's'}`;
+              } else {
+                // Generic object: stringify for display
+                textVal = textVal || JSON.stringify(contentObj);
+              }
+            } catch {
+              // fallback to safe string conversion
+              textVal = textVal || String(h.content);
+            }
+          } else if (!textVal && typeof h.content === 'string') {
+            textVal = h.content;
+          }
+
           return {
             id,
-            text: h.text || h.content || "",
+            text: textVal,
             // restore structured results/sql if backend persisted them
-            results: h.results ?? undefined,
-            sql: h.sql ?? undefined,
+            results: resultsVal ?? undefined,
+            sql: sqlVal ?? undefined,
             isUser,
             isError,
             timestamp,
