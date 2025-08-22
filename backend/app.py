@@ -26,7 +26,7 @@ chat_history = {}
 pending_queries = {}
 
 
-def remember(session_id: str, role: str, content: str, message_id: str | None = None) -> None:
+def remember(session_id: str, role: str, content: object, message_id: str | None = None) -> None:
     """Persist a chat turn using db.save_message. Accepts optional message_id.
 
     role should be one of 'user'|'assistant'|'system'|'error'.
@@ -194,10 +194,22 @@ def ask():
 
     # Safe read query execution
     try:
-        results = execute_query(sql_query)
+        results_raw = execute_query(sql_query)
+        # results_raw may be either {columns, rows} or legacy list of dicts
+        if isinstance(results_raw, dict) and "rows" in results_raw:
+            cols = results_raw.get("columns")
+            rows = results_raw.get("rows")
+        else:
+            cols = None
+            rows = results_raw
+
+        # Persist the generated SQL as a human-readable assistant message
         remember(session_id, "assistant", f"Generated SQL:\n{sql_query}")
-        remember(session_id, "assistant", f"📊 Results: {results}")
-        return jsonify({"sql": sql_query, "results": results, "history": get_history(session_id)}), 200
+        # Persist structured results so they can be restored as a table on reload
+        result_payload = {"type": "results", "sql": sql_query, "columns": cols, "rows": rows}
+        remember(session_id, "assistant", result_payload)
+
+        return jsonify({"sql": sql_query, "results": rows, "columns": cols, "history": get_history(session_id)}), 200
     except Exception as e:
         friendly_error = rewrite_db_error(str(e), get_history(session_id))
         remember(session_id, "assistant", f"❌ {friendly_error}")
@@ -228,11 +240,21 @@ def confirm_query():
     # User confirmed yes
     sql = pending_queries[session_id]["sql"]
     try:
-        results = execute_query(sql)
-        remember(session_id, "assistant",
-                 f"✅ Query executed.\nResults: {results}")
+        results_raw = execute_query(sql)
+        if isinstance(results_raw, dict) and "rows" in results_raw:
+            cols = results_raw.get("columns")
+            rows = results_raw.get("rows")
+        else:
+            cols = None
+            rows = results_raw
+
+        # Persist a human-readable confirmation and a structured results payload
+        remember(session_id, "assistant", f"✅ Query executed.")
+        result_payload = {"type": "results", "sql": sql, "columns": cols, "rows": rows}
+        remember(session_id, "assistant", result_payload)
+
         pending_queries.pop(session_id, None)
-        return jsonify({"results": results, "history": get_history(session_id)}), 200
+        return jsonify({"results": rows, "columns": cols, "history": get_history(session_id)}), 200
     except Exception as e:
         friendly_error = rewrite_db_error(str(e), get_history(session_id))
         remember(session_id, "assistant", f"❌ {friendly_error}")

@@ -10,7 +10,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # Initialize the Gemini model (fast + cheap for MVP)
-model = genai.GenerativeModel('models/gemini-2.5-flash')
+model = genai.GenerativeModel('models/gemini-2.0-flash-001')
 
 
 def format_schema(schema: dict) -> str:

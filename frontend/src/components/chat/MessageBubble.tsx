@@ -11,7 +11,16 @@ export default function MessageBubble({
   text,
 }: MessageBubbleProps) {
   const renderContent = (content: string) => {
-    if (!content) return content;
+    if (content === null || content === undefined) return null;
+    // If content is not a string (shouldn't usually happen because ChatContainer normalizes),
+    // render a safe JSON string representation.
+    if (typeof content !== 'string') {
+      try {
+        return <span>{JSON.stringify(content)}</span>;
+      } catch {
+        return <span>{String(content)}</span>;
+      }
+    }
 
     // Check for code blocks first
     const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
@@ -28,17 +37,20 @@ export default function MessageBubble({
         }
       }
 
-      // Add modern code block
+      // Dark code block within light message bubble
       const language = match[1] || '';
       const code = match[2] || '';
       parts.push(
-        <div key={parts.length} className="bg-gradient-to-br from-slate-900 to-slate-800 dark:from-slate-950 dark:to-slate-900 rounded-2xl p-4 my-3 overflow-x-auto border border-slate-700/50 shadow-lg shadow-slate-900/20">
+        <div key={parts.length} className="rounded border p-4 my-3 overflow-x-auto font-mono text-sm" style={{
+          backgroundColor: '#162A2C',
+          borderColor: '#D3C3B9'
+        }}>
           {language && (
-            <div className="text-slate-400 text-xs font-medium mb-2 uppercase tracking-wide">
+            <div className="text-xs mb-2 uppercase tracking-wide" style={{ color: '#D3C3B9' }}>
               {language}
             </div>
           )}
-          <pre className="text-slate-100 text-sm font-mono leading-relaxed whitespace-pre-wrap">
+          <pre className="leading-relaxed whitespace-pre-wrap" style={{ color: '#FEFCF6' }}>
             {code}
           </pre>
         </div>
@@ -68,8 +80,11 @@ export default function MessageBubble({
     const boldRegex = /\*\*(.*?)\*\*/g;
 
     let processed = text;
-    processed = processed.replace(boldRegex, '<strong class="font-semibold text-slate-900 dark:text-slate-100">$1</strong>');
-    processed = processed.replace(inlineCodeRegex, '<code class="bg-slate-200/80 dark:bg-slate-700/80 px-2 py-1 rounded-lg text-xs font-mono border border-slate-300/50 dark:border-slate-600/50">$1</code>');
+    // Only call replace when processed is a string
+    if (typeof processed === 'string') {
+      processed = processed.replace(boldRegex, '<strong class="font-medium">$1</strong>');
+      processed = processed.replace(inlineCodeRegex, '<code class="px-2 py-1 rounded text-xs font-mono border" style="background-color: #162A2C; border-color: #D3C3B9; color: #FEFCF6;">$1</code>');
+    }
     
     return <span key={key} dangerouslySetInnerHTML={{ __html: processed }} />;
   };

@@ -144,4 +144,402 @@
 
 .dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background-color: rgb(100 116 139);
-} 
+}
+
+/* Custom smooth animations and transitions */
+* {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Smooth gradient animations */
+.gradient-animate {
+  background-size: 400% 400%;
+  animation: gradient 15s ease infinite;
+}
+
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Glass morphism effect */
+.glass {
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  background-color: rgba(17, 25, 40, 0.25);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.125);
+}
+
+/* Floating animation */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Enhanced animations for the new design */
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(30px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(15, 15, 35, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(15, 15, 35, 0.4);
+  }
+}
+
+/* Beige/Midnight color palette utilities */
+.text-beige-100 { color: #F8F9FA; }
+.text-beige-200 { color: #F5F5DC; }
+.text-beige-300 { color: #E8E8DC; }
+.text-beige-400 { color: rgba(245, 245, 220, 0.8); }
+
+.bg-beige-100 { background-color: #F8F9FA; }
+.bg-beige-200 { background-color: #F5F5DC; }
+.bg-beige-300 { background-color: #E8E8DC; }
+
+.text-midnight-100 { color: #1A1A2E; }
+.text-midnight-200 { color: #0F0F23; }
+
+.bg-midnight-100 { background-color: #1A1A2E; }
+.bg-midnight-200 { background-color: #0F0F23; }
+
+.border-beige-100 { border-color: #F8F9FA; }
+.border-beige-200 { border-color: #F5F5DC; }
+.border-beige-300 { border-color: #E8E8DC; }
+.border-beige-400 { border-color: rgba(245, 245, 220, 0.3); }
+
+.border-midnight-100 { border-color: #1A1A2E; }
+.border-midnight-200 { border-color: #0F0F23; }
+
+/* Enhanced glassmorphism utilities */
+.glass-beige {
+  background: rgba(245, 245, 220, 0.1);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(245, 245, 220, 0.2);
+}
+
+.glass-midnight {
+  background: rgba(15, 15, 35, 0.1);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(15, 15, 35, 0.2);
+}
+
+/* Chat specific animations */
+.message-slide-in-left {
+  animation: slideInFromLeft 0.4s ease-out;
+}
+
+.message-slide-in-right {
+  animation: slideInFromRight 0.4s ease-out;
+}
+
+.message-fade-in {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+/* Enhanced glow effects */
+.midnight-glow {
+  box-shadow: 0 0 20px rgba(15, 15, 35, 0.4);
+}
+
+.beige-glow {
+  box-shadow: 0 0 20px rgba(245, 245, 220, 0.3);
+}
+
+/* Typing indicator animation */
+@keyframes typingDots {
+  0%, 20% { opacity: 0.3; }
+  50% { opacity: 1; }
+  80%, 100% { opacity: 0.3; }
+}
+
+.typing-dot-1 { animation: typingDots 1.5s infinite; }
+.typing-dot-2 { animation: typingDots 1.5s infinite 0.2s; }
+.typing-dot-3 { animation: typingDots 1.5s infinite 0.4s; }
+
+@keyframes slideInFromLeft {
+  0% { opacity: 0; transform: translateX(-30px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInFromBottom {
+  0% { opacity: 0; transform: translateY(30px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes expandWidth {
+  0% { width: 0%; }
+  100% { width: 100%; }
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Enhanced shadows */
+.shadow-3xl {
+  box-shadow: 0 35px 60px -12px rgba(0, 0, 0, 0.25);
+}
+
+/* Custom input focus effects */
+input:focus {
+  transform: scale(1.02);
+  box-shadow: 0 0 0 3px rgba(211, 195, 185, 0.3);
+}
+
+/* Button enhancements */
+button:hover {
+  transform: translateY(-1px) scale(1.02);
+}
+
+button:active {
+  transform: translateY(0) scale(1);
+}
+
+/* Subtle text selection */
+::selection {
+  background-color: rgba(211, 195, 185, 0.4);
+  color: #162A2C;
+}
+
+/* Enhanced responsive utilities */
+.text-responsive {
+  font-size: 0.875rem;
+}
+
+@media (min-width: 640px) {
+  .text-responsive { font-size: 1rem; }
+}
+
+@media (min-width: 1024px) {
+  .text-responsive { font-size: 1.125rem; }
+}
+
+.heading-responsive {
+  font-size: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .heading-responsive { font-size: 1.875rem; }
+}
+
+@media (min-width: 1024px) {
+  .heading-responsive { font-size: 2.25rem; }
+}
+
+@media (min-width: 1280px) {
+  .heading-responsive { font-size: 3rem; }
+}
+
+.container-responsive {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  .container-responsive { 
+    padding-left: 1.5rem; 
+    padding-right: 1.5rem; 
+  }
+}
+
+@media (min-width: 1024px) {
+  .container-responsive { 
+    padding-left: 2rem; 
+    padding-right: 2rem; 
+  }
+}
+
+@media (min-width: 1280px) {
+  .container-responsive { 
+    padding-left: 3rem; 
+    padding-right: 3rem; 
+  }
+}
+
+/* Better mobile touch targets */
+button, [role="button"], input[type="submit"], input[type="button"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Improved focus states for accessibility */
+*:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+  
+  /* Prevent horizontal scroll on mobile */
+  html, body {
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+  }
+  
+  /* Ensure content can scroll vertically */
+  body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  }
+  
+  /* Better mobile viewport handling */
+  @media (max-width: 640px) {
+    html {
+      /* Use dynamic viewport units for better mobile support */
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+    
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      position: relative;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+    
+    .min-h-screen {
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+    
+    /* Ensure scrollable content */
+    main, [role="main"], [data-scroll-container] {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+  }
+  
+  /* Additional mobile optimizations */
+  @media (max-width: 475px) {
+    /* For extra small screens, reduce all spacing and font sizes */
+    .text-3xl { font-size: 1.5rem; line-height: 2rem; }
+    .text-4xl { font-size: 1.875rem; line-height: 2.25rem; }
+    .text-5xl { font-size: 2.25rem; line-height: 2.5rem; }
+    .space-y-4 > * + * { margin-top: 0.75rem; }
+    .space-y-6 > * + * { margin-top: 1rem; }
+    .space-y-8 > * + * { margin-top: 1.25rem; }
+    .p-8 { padding: 1rem; }
+    .p-6 { padding: 0.75rem; }
+    .gap-8 { gap: 1rem; }
+    .gap-6 { gap: 0.75rem; }
+  }
+  
+  @media (max-height: 600px) {
+    /* For very short screens, reduce spacing */
+    .space-y-4 > * + * {
+      margin-top: 0.75rem;
+    }
+    .space-y-6 > * + * {
+      margin-top: 1rem;
+    }
+    .space-y-8 > * + * {
+      margin-top: 1.25rem;
+    }
+  }
+  
+  /* Ensure smooth scrolling and prevent layout shift */
+  html {
+    scroll-behavior: smooth;
+    height: 100%;
+  }
+  
+  body {
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  
+  /* Mobile-specific scroll improvements */
+  @media (max-width: 640px) {
+    /* Enable momentum scrolling on iOS */
+    * {
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Fix for mobile scroll issues */
+    html {
+      overflow: auto;
+      height: -webkit-fill-available;
+    }
+    
+    body {
+      overflow: auto;
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+    }
+    
+    /* Ensure the main container is scrollable */
+    [data-scroll-container] {
+      overflow-y: auto;
+      height: auto;
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+    }
+    
+    /* Don't prevent body scroll when modal is open on mobile */
+    body.modal-open {
+      overflow: auto;
+    }
+  }
+  
+  /* Desktop modal behavior */
+  @media (min-width: 641px) {
+    body.modal-open {
+      overflow: hidden;
+    }
+  }
+  
+  /* Better touch targets for mobile */
+  @media (max-width: 640px) {
+    button, [role="button"], input[type="submit"], input[type="button"] {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
