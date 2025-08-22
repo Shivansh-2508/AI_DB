@@ -244,7 +244,8 @@ def confirm_query():
             cols = None
             rows = results_raw
 
-        remember(session_id, "assistant", f"✅ Query executed.\nResults: {rows}")
+        remember(session_id, "assistant",
+                 f"✅ Query executed.\nResults: {rows}")
         pending_queries.pop(session_id, None)
         return jsonify({"results": rows, "columns": cols, "history": get_history(session_id)}), 200
     except Exception as e:
