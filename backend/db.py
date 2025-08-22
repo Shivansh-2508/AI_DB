@@ -203,9 +203,12 @@ def execute_query(query, schema=None):
         cur.execute(query)
 
         if cur.description:  # SELECT query
+            # Preserve explicit column order using cursor.description
             desc = [col[0] for col in cur.description]
             rows = cur.fetchall()
-            return [dict(zip(desc, row)) for row in rows]
+            dict_rows = [dict(zip(desc, row)) for row in rows]
+            # Return both columns (ordered) and rows to let callers render stable tables
+            return {"columns": desc, "rows": dict_rows}
         else:  # INSERT/UPDATE/DELETE etc.
             conn.commit()
             return {"rows_affected": cur.rowcount}

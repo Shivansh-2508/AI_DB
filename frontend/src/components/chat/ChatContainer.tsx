@@ -9,6 +9,7 @@ import MessageList, { Message } from "./MessageList";
 interface ApiResponse {
   message?: string;
   sql?: string;
+  columns?: string[];
   results?: Record<string, unknown>;
   error?: string;
   clarifier?: string;
@@ -26,6 +27,12 @@ interface BackendMessage {
   role?: string;
   type?: string;
   timestamp?: string;
+}
+
+// extended variant for persisted structured fields
+interface BackendMessageWithStructured extends BackendMessage {
+  results?: unknown;
+  sql?: string;
 }
 
 interface SessionState {
@@ -164,7 +171,8 @@ export default function ChatContainer() {
   }, [sessionId, generateMessageId]);
 
   // Phase 3: Enhanced message management with types
-  const addMessage = useCallback((msg: Omit<Message, "id" | "timestamp"> & { type?: "user" | "assistant" | "system" | "error" }) => {
+  type MessageWithOptionalStructured = Omit<Message, "id" | "timestamp"> & { type?: "user" | "assistant" | "system" | "error", results?: unknown, sql?: string };
+  const addMessage = useCallback((msg: MessageWithOptionalStructured) => {
     const newMessage: Message = {
       id: generateMessageId(),
       timestamp: new Date(),
@@ -196,7 +204,10 @@ export default function ChatContainer() {
         sessionId: sessionId,
         messageId: newMessage.id,
         content: newMessage.text,
-        role: msg.type || "assistant"
+        role: msg.type || "assistant",
+        // include structured fields if present so persisted history contains full results
+  results: msg.results ?? undefined,
+  sql: msg.sql ?? undefined
       })
     }).catch(err => console.error("Failed to save message to backend", err));
 }, [generateMessageId, sessionId, userEmail]);
@@ -252,11 +263,13 @@ export default function ChatContainer() {
 
       const data: ApiResponse = await res.json();
       
-      if (res.ok) {
+        if (res.ok) {
         if (decision === "yes") {
           addMessageWithActivity({
-            text: `✅ Query executed successfully!\n\`\`\`json\n${JSON.stringify(data.results, null, 2)}\n\`\`\``,
-            type: "assistant"
+            text: `✅ Query executed successfully!`,
+            type: "assistant",
+            results: data.results,
+            sql: data.sql
           });
         } else {
           addMessageWithActivity({
@@ -332,8 +345,8 @@ export default function ChatContainer() {
           return; // nothing persisted
         }
 
-        // Map backend rows to local Message shape
-        const mapped: Message[] = history.map((h: BackendMessage) => {
+  // Map backend rows to local Message shape
+  const mapped: Message[] = history.map((h: BackendMessageWithStructured) => {
           const id = h.message_id || h.messageId || h.id || generateMessageId();
           // ensure used ids tracked
           usedMessageIds.current.add(id);
@@ -345,6 +358,9 @@ export default function ChatContainer() {
           return {
             id,
             text: h.text || h.content || "",
+            // restore structured results/sql if backend persisted them
+            results: h.results ?? undefined,
+            sql: h.sql ?? undefined,
             isUser,
             isError,
             timestamp,
@@ -456,7 +472,7 @@ export default function ChatContainer() {
 
       const data: ApiResponse = await res.json();
 
-      if (!res.ok || data.error) {
+  if (!res.ok || data.error) {
         // Phase 3: Enhanced error handling with suggestions
         let errorMsg = data.error || "Unable to process your request. Please try again.";
         if (data.suggestions) {
@@ -496,15 +512,31 @@ export default function ChatContainer() {
             });
           }
         } else {
-          // Regular query response
-          let reply = "";
-          if (data.message) reply += `${data.message}\n`;
-          if (data.sql) reply += `\n**Generated SQL:**\n\`\`\`sql\n${data.sql}\n\`\`\`\n`;
-          if (data.results) reply += `\n**Results:**\n\`\`\`json\n${JSON.stringify(data.results, null, 2)}\n\`\`\``;
-          
-          addMessageWithActivity({ 
-            text: reply.trim(),
-            type: "assistant"
+          // Regular query response: attach structured results & sql
+          const assistantTextParts: string[] = [];
+          if (data.message) assistantTextParts.push(data.message);
+          if (data.sql) assistantTextParts.push("Generated SQL available.");
+
+          // Normalize backend results: prefer explicit columns metadata to preserve order
+          type Normalized = { columns?: string[]; rows?: Record<string, unknown>[] };
+          let normalizedResults: Normalized | undefined = undefined;
+          if (data && Array.isArray(data.columns) && Array.isArray(data.results)) {
+            normalizedResults = { columns: data.columns as string[], rows: data.results as Record<string, unknown>[] };
+          } else if (Array.isArray(data.results)) {
+            // legacy: derive columns from first row but keep insertion order
+            const rows = data.results as Record<string, unknown>[];
+            const columns = rows.length ? Object.keys(rows[0]) : [];
+            normalizedResults = { columns, rows };
+          } else if (data.results) {
+            // non-array results (object / scalar) — pass through as a single-row table
+            normalizedResults = { rows: [data.results as Record<string, unknown>] };
+          }
+
+          addMessageWithActivity({
+            text: assistantTextParts.join("\n\n") || "Here are the results:",
+            type: "assistant",
+            results: normalizedResults,
+            sql: data.sql
           });
         }
       }

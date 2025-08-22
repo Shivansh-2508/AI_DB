@@ -194,10 +194,18 @@ def ask():
 
     # Safe read query execution
     try:
-        results = execute_query(sql_query)
+        results_raw = execute_query(sql_query)
+        # results_raw may be either {columns, rows} or legacy list of dicts
+        if isinstance(results_raw, dict) and "rows" in results_raw:
+            cols = results_raw.get("columns")
+            rows = results_raw.get("rows")
+        else:
+            cols = None
+            rows = results_raw
+
         remember(session_id, "assistant", f"Generated SQL:\n{sql_query}")
-        remember(session_id, "assistant", f"📊 Results: {results}")
-        return jsonify({"sql": sql_query, "results": results, "history": get_history(session_id)}), 200
+        remember(session_id, "assistant", f"📊 Results: {rows}")
+        return jsonify({"sql": sql_query, "results": rows, "columns": cols, "history": get_history(session_id)}), 200
     except Exception as e:
         friendly_error = rewrite_db_error(str(e), get_history(session_id))
         remember(session_id, "assistant", f"❌ {friendly_error}")
@@ -228,11 +236,17 @@ def confirm_query():
     # User confirmed yes
     sql = pending_queries[session_id]["sql"]
     try:
-        results = execute_query(sql)
-        remember(session_id, "assistant",
-                 f"✅ Query executed.\nResults: {results}")
+        results_raw = execute_query(sql)
+        if isinstance(results_raw, dict) and "rows" in results_raw:
+            cols = results_raw.get("columns")
+            rows = results_raw.get("rows")
+        else:
+            cols = None
+            rows = results_raw
+
+        remember(session_id, "assistant", f"✅ Query executed.\nResults: {rows}")
         pending_queries.pop(session_id, None)
-        return jsonify({"results": results, "history": get_history(session_id)}), 200
+        return jsonify({"results": rows, "columns": cols, "history": get_history(session_id)}), 200
     except Exception as e:
         friendly_error = rewrite_db_error(str(e), get_history(session_id))
         remember(session_id, "assistant", f"❌ {friendly_error}")
