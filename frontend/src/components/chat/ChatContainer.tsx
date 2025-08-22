@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getUserEmail } from "@/utils/supabase/getUserEmail";
-import { Database, Sparkles, Clock, AlertTriangle, CheckCircle } from "lucide-react";
+import { Database, AlertTriangle } from "lucide-react";
 import ChatInput from "./ChatInput";
 import MessageList, { Message } from "./MessageList";
 
@@ -548,105 +548,94 @@ export default function ChatContainer() {
   }, []);
 
   return (
-    <div className="w-full max-w-5xl mx-auto h-[85vh] flex flex-col relative">
-      {/* Modern Glassmorphic Container */}
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/30 via-white/20 to-sky-50/30 dark:from-indigo-950/20 dark:via-slate-900/40 dark:to-sky-950/20 backdrop-blur-xl rounded-3xl border border-white/20 dark:border-slate-700/30 shadow-2xl shadow-indigo-500/10 dark:shadow-indigo-900/20"></div>
-      
-      <div className="relative z-10 h-full flex flex-col rounded-3xl overflow-hidden">
-        {/* Premium Header with Neural Network Aesthetic */}
-        <div className="flex-shrink-0 bg-gradient-to-r from-slate-50/90 via-white/80 to-indigo-50/90 dark:from-slate-900/90 dark:via-slate-800/80 dark:to-indigo-950/90 backdrop-blur-sm border-b border-slate-200/50 dark:border-slate-700/50 px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              {/* AI-Themed Icon with Glow */}
-              <div className="relative p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-500/25 dark:shadow-indigo-400/20">
-                <Database className="h-6 w-6 text-white" />
-                <div className="absolute inset-0 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-xl opacity-0 hover:opacity-20 transition-opacity duration-300"></div>
-              </div>
-              
-              <div className="space-y-1">
-                <h1 className="text-xl font-bold bg-gradient-to-r from-slate-900 via-indigo-800 to-purple-900 dark:from-white dark:via-indigo-200 dark:to-purple-200 bg-clip-text text-transparent">
-                  AI Database Assistant
-                </h1>
-                <div className="flex items-center gap-3 text-sm">
-                  <span className="text-slate-600 dark:text-slate-400">
-                    Natural Language → SQL • {sessionState.messageCount} queries
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">Neural Processing</span>
-                  </div>
-                </div>
-              </div>
+    <div className="h-[calc(100vh-180px)] flex flex-col">
+      {/* Chat Header */}
+      <div className="flex-shrink-0 px-6 py-4 border-b" style={{ 
+        backgroundColor: 'rgba(22, 42, 44, 0.98)',
+        borderColor: 'rgba(211, 195, 185, 0.3)'
+      }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* AI Icon with gradient */}
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ 
+              background: 'linear-gradient(135deg, #E91E63 0%, #14B8A6 100%)'
+            }}>
+              <Database className="h-4 w-4 text-white" />
             </div>
             
-            {/* Modern Status Indicators */}
-            <div className="flex items-center gap-3">
-               {/* Session Status */}
-               <div className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium transition-all duration-300 ${
-                 sessionState.isActive 
-                   ? 'bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-950/50 dark:to-green-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700/50 shadow-lg shadow-emerald-500/10' 
-                   : 'bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/50 dark:to-rose-950/50 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-700/50 shadow-lg shadow-red-500/10'
-               }`}>
-                 {sessionState.isActive ? (
-                   <>
-                     <CheckCircle className="h-3.5 w-3.5" />
-                     <span>Active Session</span>
-                   </>
-                 ) : (
-                   <>
-                     <Clock className="h-3.5 w-3.5" />
-                     <span>Inactive</span>
-                   </>
-                 )}
-               </div>
-               
-               {/* Confirmation Status */}
-               {sessionState.awaitingConfirmation && (
-                 <div className="flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/50 dark:to-yellow-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700/50 shadow-lg shadow-amber-500/10 animate-pulse">
-                   <AlertTriangle className="h-3.5 w-3.5" />
-                   <span>Awaiting Confirmation</span>
-                 </div>
-               )}
-               
-               {/* AI Badge */}
-               <div className="flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/50 dark:to-purple-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700/50 shadow-lg shadow-indigo-500/10">
-                 <Sparkles className="h-3.5 w-3.5" />
-                 <span>AI Powered</span>
-               </div>
-
-               {/* Clear Chat Button (placed to the right near logout area) */}
-               <button
-                 type="button"
-                 disabled={clearing}
-                 onClick={() => {
-                   if (typeof window !== 'undefined' && window.confirm('Clear all chat history for this session? This will delete messages from the database and cannot be undone.')) {
-                     clearChatHistory();
-                   }
-                 }}
-                 className="ml-2 px-3 py-2 rounded-md text-xs font-medium bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:hover:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-700/30 shadow-sm"
-                 aria-label="Clear chat history"
-               >
-                 {clearing ? 'Clearing…' : 'Clear Chat'}
-               </button>
-             </div>
+            <div>
+              <h1 className="text-base font-medium" style={{ color: '#FEFCF6' }}>
+                Database Assistant
+              </h1>
+              <div className="flex items-center gap-2 text-xs font-mono" style={{ color: '#D3C3B9' }}>
+                <span>{sessionState.messageCount} queries</span>
+                {sessionState.isActive && (
+                  <>
+                    <span>•</span>
+                    <div className="flex items-center gap-1">
+                      <div className="w-1 h-1 rounded-full bg-green-400"></div>
+                      <span>active</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
+          
+          {/* Status and Controls */}
+          <div className="flex items-center gap-3">
+             {/* Session Status */}
+             {!sessionState.isActive && (
+               <div className="flex items-center gap-1.5 text-xs font-mono" style={{ color: '#D3C3B9' }}>
+                 <div className="w-1 h-1 rounded-full" style={{ backgroundColor: '#D3C3B9' }}></div>
+                 <span>inactive</span>
+               </div>
+             )}
+             
+             {/* Confirmation Status */}
+             {sessionState.awaitingConfirmation && (
+               <div className="flex items-center gap-1.5 text-xs text-yellow-400 font-mono">
+                 <AlertTriangle className="h-3 w-3" />
+                 <span>confirm</span>
+               </div>
+             )}
 
-        {/* Modern Messages Area */}
-        <div className="flex-1 min-h-0 bg-gradient-to-b from-slate-50/30 via-white/10 to-indigo-50/20 dark:from-slate-900/30 dark:via-slate-800/10 dark:to-indigo-950/20">
-          <MessageList messages={messages} isLoading={loading} />
+             {/* Clear Chat Button */}
+             <button
+               type="button"
+               disabled={clearing}
+               onClick={() => {
+                 if (typeof window !== 'undefined' && window.confirm('Clear all chat history for this session?')) {
+                   clearChatHistory();
+                 }
+               }}
+               className="text-xs hover:text-opacity-80 transition-colors duration-200 font-mono"
+               style={{ color: '#D3C3B9' }}
+               aria-label="Clear chat history"
+             >
+               {clearing ? 'clearing...' : 'clear'}
+             </button>
+           </div>
         </div>
+      </div>
 
-        {/* Premium Input Area */}
-        <div className="flex-shrink-0 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm border-t border-slate-200/50 dark:border-slate-700/50">
-          <ChatInput 
-            onSend={handleUserInput} 
-            disabled={loading}
-            placeholder="Ask me anything about your database..."
-            awaitingConfirmation={sessionState.awaitingConfirmation}
-            sessionActive={sessionState.isActive}
-          />
-        </div>
+      {/* Messages Area */}
+      <div className="flex-1 min-h-0" style={{ backgroundColor: '#162A2C' }}>
+        <MessageList messages={messages} isLoading={loading} />
+      </div>
+
+      {/* Input Area */}
+      <div className="flex-shrink-0 border-t" style={{ 
+        backgroundColor: 'rgba(22, 42, 44, 0.98)',
+        borderColor: 'rgba(211, 195, 185, 0.3)'
+      }}>
+        <ChatInput 
+          onSend={handleUserInput} 
+          disabled={loading}
+          placeholder="Ask about your database..."
+          awaitingConfirmation={sessionState.awaitingConfirmation}
+          sessionActive={sessionState.isActive}
+        />
       </div>
     </div>
   );
