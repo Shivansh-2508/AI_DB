@@ -43,6 +43,24 @@ interface SessionState {
   awaitingConfirmation?: boolean;
 }
 
+// Helper function to normalize results to TableResult format
+function normalizeResults(data: ApiResponse): { columns: string[]; rows: Record<string, unknown>[] } | undefined {
+  if (data && Array.isArray(data.columns) && Array.isArray(data.results)) {
+    return { columns: data.columns as string[], rows: data.results as Record<string, unknown>[] };
+  } else if (Array.isArray(data.results)) {
+    // legacy: derive columns from first row but keep insertion order
+    const rows = data.results as Record<string, unknown>[];
+    const columns = rows.length ? Object.keys(rows[0]) : [];
+    return { columns, rows };
+  } else if (data.results) {
+    // non-array results (object / scalar) — pass through as a single-row table
+    const rows = [data.results as Record<string, unknown>];
+    const columns = Object.keys(rows[0]);
+    return { columns, rows };
+  }
+  return undefined;
+}
+
 export const SessionContext = createContext<string | null>(null);
 
 export default function ChatContainer() {
@@ -267,10 +285,13 @@ export default function ChatContainer() {
       
         if (res.ok) {
         if (decision === "yes") {
+          // Use the normalizeResults helper function to properly format the results
+          const normalizedResults = normalizeResults(data);
+          
           addMessageWithActivity({
             text: `✅ Query executed successfully!`,
             type: "assistant",
-            results: data.results,
+            results: normalizedResults,
             sql: data.sql
           });
         } else {
@@ -579,20 +600,8 @@ export default function ChatContainer() {
           if (data.message) assistantTextParts.push(data.message);
           if (data.sql) assistantTextParts.push("Generated SQL available.");
 
-          // Normalize backend results: prefer explicit columns metadata to preserve order
-          type Normalized = { columns?: string[]; rows?: Record<string, unknown>[] };
-          let normalizedResults: Normalized | undefined = undefined;
-          if (data && Array.isArray(data.columns) && Array.isArray(data.results)) {
-            normalizedResults = { columns: data.columns as string[], rows: data.results as Record<string, unknown>[] };
-          } else if (Array.isArray(data.results)) {
-            // legacy: derive columns from first row but keep insertion order
-            const rows = data.results as Record<string, unknown>[];
-            const columns = rows.length ? Object.keys(rows[0]) : [];
-            normalizedResults = { columns, rows };
-          } else if (data.results) {
-            // non-array results (object / scalar) — pass through as a single-row table
-            normalizedResults = { rows: [data.results as Record<string, unknown>] };
-          }
+          // Use the normalizeResults helper function
+          const normalizedResults = normalizeResults(data);
 
           addMessageWithActivity({
             text: assistantTextParts.join("\n\n") || "Here are the results:",
