@@ -96,7 +96,7 @@ export default function ChatPage() {
 
       {/* Main Chat Area */}
       <main className="flex-1 flex justify-center p-4 sm:p-6 relative z-10">
-        <div className="w-full max-w-6xl">
+        <div className="w-full max-w-8xl">
           <div className="rounded-xl shadow-xl border overflow-hidden" style={{ 
             backgroundColor: '#162A2C',
             borderColor: '#D3C3B9'

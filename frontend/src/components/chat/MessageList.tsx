@@ -31,12 +31,13 @@ import { SessionContext } from "./ChatContainer";
 export default function MessageList({ messages, isLoading }: MessageListProps) {
   const sessionId = useContext(SessionContext);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [chartLoading, setChartLoading] = useState(false);
-  const [chartConfig, setChartConfig] = useState<ChartConfig | null>(null);
+  // Track chart loading and configs per message id
+  const [chartLoading, setChartLoading] = useState<{[id: string]: boolean}>({});
+  const [charts, setCharts] = useState<{[id: string]: ChartConfig | null}>({});
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading, chartConfig]);
+  }, [messages, isLoading, charts]);
 
   const getLoadingMessage = () => {
     const loadingMessages = [
@@ -49,9 +50,6 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
     return loadingMessages[Math.floor(Math.random() * loadingMessages.length)];
   };
 
-  // Find the most recent assistant table result
-  const lastTableMsg = [...messages].reverse().find((m: Message) => m.results && m.type === "assistant");
-  // Type guard for TableResult
   const isTableResult = (r: unknown): r is TableResult => {
     return (
       !!r &&
@@ -60,21 +58,16 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
       Array.isArray((r as TableResult).rows)
     );
   };
-  // Show chart button if lastTableMsg exists and has at least 2 columns and more than 1 row
-  const showChartButton = lastTableMsg && isTableResult(lastTableMsg.results) && lastTableMsg.results.columns.length >= 2 && lastTableMsg.results.rows.length > 1;
 
-  const handleGenerateChart = async () => {
-    if (!lastTableMsg || !isTableResult(lastTableMsg.results)) return;
-    setChartLoading(true);
+  // Chart generation per message
+  const handleGenerateChart = async (msg: Message) => {
+    if (!msg || !isTableResult(msg.results)) return;
+    setChartLoading(prev => ({ ...prev, [msg.id]: true }));
     try {
-      // Prepare chart config and data
-      const columns = lastTableMsg.results.columns;
-      const rows = lastTableMsg.results.rows;
-      // Use first two columns for x and y axes
+      const columns = msg.results.columns;
+      const rows = msg.results.rows;
       const x = columns[0];
       const y = columns[1];
-      // Data is already in Record<string, unknown>[] format
-      // Convert all values to string | number for chart compatibility
       const safeRows: Record<string, string | number>[] = rows.map(row => {
         const safeRow: Record<string, string | number> = {};
         for (const key of Object.keys(row)) {
@@ -83,13 +76,12 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
         }
         return safeRow;
       });
-      const chartConfig = {
+      const chartConfig: ChartConfig = {
         type: "bar",
         x,
         y,
         data: safeRows
       };
-      // Call backend /chart route with correct payload
       const res = await fetch("http://localhost:5000/chart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -100,41 +92,26 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
         })
       });
       const data = await res.json();
-      if (data.chart) {
-        setChartConfig(data.chart);
-      } else {
-        setChartConfig(chartConfig);
-      }
-    } catch (err: any) {
+      setCharts(prev => ({ ...prev, [msg.id]: data.chart || chartConfig }));
+    } catch (err) {
+      setCharts(prev => ({ ...prev, [msg.id]: null }));
       console.error("Chart generation failed:", err);
     }
-    setChartLoading(false);
+    setChartLoading(prev => ({ ...prev, [msg.id]: false }));
   };
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="p-4 space-y-4">
+    <div className="flex flex-col h-full" style={{ width: '100%' }}>
+      <div className="flex-1 overflow-y-auto p-6 space-y-4" style={{ backgroundColor: '#162A2C', borderRadius: 16, maxWidth: '1100px', margin: '0 auto', minWidth: '700px' }}>
         {messages.map((message: Message) => {
           const isUser = message.isUser || message.type === "user";
-          if (message.chart && typeof message.chart === "object") {
-            return (
-              <div key={message.id} className="flex justify-start gap-3">
-                <div className="flex-shrink-0 mt-1">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #E91E63 0%, #14B8A6 100%)' }}>
-                    <Bot className="h-4 w-4 text-white" />
-                  </div>
-                </div>
-                <div className="max-w-[70%] rounded-lg px-4 py-3 shadow-sm rounded-bl-sm" style={{ backgroundColor: '#FEFCF6', border: '1px solid #D3C3B9' }}>
-                  <div className="text-xs font-medium mb-1 opacity-70" style={{ color: '#162A2C' }}>AI</div>
-                  <ChartRenderer config={message.chart} />
-                  <div className="text-xs mt-1 opacity-50" style={{ color: '#162A2C' }}>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                </div>
-              </div>
-            );
-          }
-          // Default message rendering
           return (
-            <div key={message.id} className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <div
+              key={message.id}
+              className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'} w-full`}
+              style={{ width: '100%' }}
+            >
+              {/* AI bubble on left, user bubble on right */}
               {!isUser && (
                 <div className="flex-shrink-0 mt-1">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #E91E63 0%, #14B8A6 100%)' }}>
@@ -142,9 +119,20 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
                   </div>
                 </div>
               )}
-              <div className={`max-w-[70%] rounded-lg px-4 py-3 shadow-sm ${isUser ? 'rounded-br-sm' : 'rounded-bl-sm'}`} style={{ backgroundColor: isUser ? '#E3F2FD' : '#FEFCF6', border: `1px solid ${isUser ? '#BBDEFB' : '#D3C3B9'}` }}>
-                <div className="text-xs font-medium mb-1 opacity-70" style={{ color: '#162A2C' }}>{isUser ? 'You' : 'AI'}</div>
-                <div style={{ color: '#162A2C' }}>
+              <div
+                className={`rounded-lg px-6 py-4 shadow-sm ${isUser ? 'rounded-br-2xl ml-auto' : 'rounded-bl-2xl mr-auto'}`}
+                style={{
+                  backgroundColor: isUser ? '#E3F2FD' : '#FEFCF6',
+                  border: `1px solid ${isUser ? '#BBDEFB' : '#D3C3B9'}`,
+                  maxWidth: '60%',
+                  minWidth: '340px',
+                  textAlign: isUser ? 'right' : 'left',
+                  marginLeft: isUser ? 'auto' : undefined,
+                  marginRight: !isUser ? 'auto' : undefined
+                }}
+              >
+                <div className="text-xs font-medium mb-1 opacity-70" style={{ color: '#162A2C', textAlign: isUser ? 'right' : 'left' }}>{isUser ? 'You' : 'AI'}</div>
+                <div style={{ color: '#162A2C', textAlign: isUser ? 'right' : 'left' }}>
                   <MessageBubble {...message} />
                 </div>
                 {message.results ? (
@@ -152,6 +140,24 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
                     <TableView results={message.results} />
                     {message.sql && (
                       <pre className="mt-3 text-xs bg-[#0F1720] text-[#E6EEF6] p-2 rounded">{String(message.sql)}</pre>
+                    )}
+                    {/* Chart button and chart for this table */}
+                    {isTableResult(message.results) && message.results.columns.length >= 2 && message.results.rows.length > 1 && (
+                      <div className="mt-3">
+                        <button
+                          className="bg-[#14B8A6] text-white px-4 py-2 rounded shadow hover:bg-[#0F1720] transition"
+                          onClick={() => handleGenerateChart(message)}
+                          disabled={chartLoading[message.id]}
+                          style={{ float: isUser ? 'right' : 'left' }}
+                        >
+                          {chartLoading[message.id] ? "Generating Chart..." : "Generate Chart"}
+                        </button>
+                        {charts[message.id] && (
+                          <div className="mt-4">
+                            <ChartRenderer config={charts[message.id]!} />
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 ) : (() => {
@@ -170,11 +176,11 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
                   }
                   return null;
                 })()}
-                <div className="text-xs mt-1 opacity-50" style={{ color: '#162A2C' }}>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                <div className="text-xs mt-1 opacity-50" style={{ color: '#162A2C', textAlign: isUser ? 'right' : 'left' }}>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
               </div>
               {isUser && (
                 <div className="flex-shrink-0 mt-1">
-                  <div className="w-8 h-8 rounded-lg border flex items-center justify-center" style={{ backgroundColor: '#FEFCF6', borderColor: '#D3C3B9' }}>
+                  <div className="w-8 h-8 rounded-lg border flex items-center justify-center" style={{ backgroundColor: '#FEFCF6', borderColor: '#BBDEFB' }}>
                     <User className="h-4 w-4" style={{ color: '#162A2C' }} />
                   </div>
                 </div>
@@ -182,23 +188,6 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
             </div>
           );
         })}
-        {/* Chart button and renderer for latest table */}
-        {showChartButton && lastTableMsg && (
-          <div className="flex justify-start gap-3">
-            <button
-              className="bg-[#14B8A6] text-white px-4 py-2 rounded shadow hover:bg-[#0F1720] transition"
-              onClick={handleGenerateChart}
-              disabled={chartLoading}
-            >
-              {chartLoading ? "Generating Chart..." : "Generate Chart"}
-            </button>
-          </div>
-        )}
-        {chartConfig && (
-          <div className="flex justify-start gap-3">
-            <ChartRenderer config={chartConfig} />
-          </div>
-        )}
         {/* Loading indicator */}
         {isLoading && (
           <div className="flex justify-start gap-3">
