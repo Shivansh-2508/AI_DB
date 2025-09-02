@@ -10,7 +10,10 @@ from db import (
     get_chat_history,
     clear_chat_session,
 )
-from nlp_to_sql import generate_sql_from_chat_history, maybe_generate_clarifier, rewrite_db_error, suggest_next_commands
+from nlp_to_sql import generate_sql_from_chat_history, maybe_generate_clarifier, rewrite_db_error, suggest_next_commands, detect_chartable, cache_ai_table
+import io
+import base64
+import matplotlib.pyplot as plt
 
 app = Flask(__name__)
 # Allow CORS from the frontend during local development (preflight + credentials)
@@ -20,7 +23,11 @@ CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "http://127.0.
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
 # -------------------- In-memory chat history (MVP) --------------------
+
 chat_history = {}
+
+# Cache for last query results per session (used by /chart route)
+last_results_cache = {}
 
 # Pending write queries: { sessionId: {"sql": "...", "user_id": "..."} }
 pending_queries = {}
@@ -170,20 +177,22 @@ def ask():
     if not user_id:
         return jsonify({"error": "email required"}), 400
 
-    schema = get_cached_schema(user_id) or cache_user_schema(user_id)
+    # Always fetch and cache schema before query generation
+    schema = get_cached_schema(user_id)
+    if not schema:
+        schema = cache_user_schema(user_id)
 
     # Log user input
     remember(session_id, "user", user_input)
 
-    # Clarifier check — include recent chat history so the LLM can use context
-    clarifier = maybe_generate_clarifier(
-        user_input, schema, get_history(session_id))
+    # Always pass schema to clarifier and SQL generator
+    history = get_history(session_id)
+    clarifier = maybe_generate_clarifier(user_input, schema, history)
     if clarifier:
         remember(session_id, "assistant", clarifier)
-        return jsonify({"clarifier": clarifier, "history": get_history(session_id)}), 200
+        return jsonify({"clarifier": clarifier, "history": history}), 200
 
-    # Generate SQL
-    sql_query = generate_sql_from_chat_history(get_history(session_id), schema)
+    sql_query = generate_sql_from_chat_history(history, schema)
 
     # Write protection
     if is_write_query(sql_query):
@@ -195,28 +204,45 @@ def ask():
     # Safe read query execution
     try:
         results_raw = execute_query(sql_query)
-        # results_raw may be either {columns, rows} or legacy list of dicts
-        if isinstance(results_raw, dict) and "rows" in results_raw:
-            cols = results_raw.get("columns")
-            rows = results_raw.get("rows")
+        if isinstance(results_raw, dict):
+            cols = results_raw.get("columns", [])
+            rows = results_raw.get("rows", [])
         else:
-            cols = None
+            cols = []
             rows = results_raw
+
+        # Only update last_results_cache if we have valid results
+        if cols and rows:
+            last_results_cache[session_id] = {"columns": cols, "rows": rows}
+            cache_ai_table(session_id, cols, rows)
+            # Prompt user for chart generation if table is chartable
+            chartable, chart_type = detect_chartable(cols, rows)
+            if chartable:
+                chart_prompt = "Do you want me to generate a chart for the above table?"
+                remember(session_id, "assistant", chart_prompt)
 
         # Persist the generated SQL as a human-readable assistant message
         remember(session_id, "assistant", f"Generated SQL:\n{sql_query}")
         # Persist structured results so they can be restored as a table on reload
-        result_payload = {"type": "results", "sql": sql_query, "columns": cols, "rows": rows}
+        result_payload = {"type": "results",
+                          "sql": sql_query, "columns": cols, "rows": rows}
         remember(session_id, "assistant", result_payload)
 
-        return jsonify({"sql": sql_query, "results": rows, "columns": cols, "history": get_history(session_id)}), 200
+        return jsonify({
+            "sql": sql_query,
+            "results": rows,
+            "columns": cols,
+            "chartable": chartable if 'chartable' in locals() else False,
+            "chart_type": chart_type if 'chart_type' in locals() else None,
+            "history": get_history(session_id)
+        }), 200
     except Exception as e:
         friendly_error = rewrite_db_error(str(e), get_history(session_id))
         remember(session_id, "assistant", f"❌ {friendly_error}")
         suggestions = suggest_next_commands(schema, get_history(session_id))
         remember(session_id, "assistant", f"💡 You can try:\n{suggestions}")
+        # Do NOT clear last_results_cache on error
         return jsonify({"error": friendly_error, "sql": sql_query, "suggestions": suggestions, "history": get_history(session_id)}), 500
-
 # -------------------- Confirm pending write --------------------
 
 
@@ -250,7 +276,8 @@ def confirm_query():
 
         # Persist a human-readable confirmation and a structured results payload
         remember(session_id, "assistant", f"✅ Query executed.")
-        result_payload = {"type": "results", "sql": sql, "columns": cols, "rows": rows}
+        result_payload = {"type": "results",
+                          "sql": sql, "columns": cols, "rows": rows}
         remember(session_id, "assistant", result_payload)
 
         pending_queries.pop(session_id, None)
@@ -274,6 +301,72 @@ def cancel_query():
     pending_queries.pop(session_id, None)
     remember(session_id, "assistant", "❌ Query cancelled.")
     return jsonify({"message": "Query cancelled", "history": get_history(session_id)}), 200
+
+
+@app.route('/chart', methods=['POST'])
+def generate_chart():
+    data = request.get_json(silent=True) or {}
+    session_id = data.get('session_id') or data.get('sessionId') or 'default'
+    chart_type = data.get('chartType') or data.get('chart_type')
+
+    if session_id not in last_results_cache:
+        return jsonify({"error": "No recent results found for this session"}), 400
+
+    results = last_results_cache[session_id]
+    cols, rows = results["columns"], results["rows"]
+
+    chartable, detected_chart_type = detect_chartable(cols, rows)
+    if not chartable:
+        return jsonify({"error": "Data not suitable for charting"}), 400
+
+    # Chart config for backward compatibility
+    # Normalize keys to lowercase for frontend compatibility
+    x_key = str(cols[0]).lower()
+    y_key = str(cols[1]).lower()
+    chart_config = {
+        "type": chart_type or detected_chart_type,
+        "x": x_key,
+        "y": y_key,
+        "data": [{x_key: r[0], y_key: r[1]} for r in rows[:50]]
+    }
+
+    # Generate chart image using Matplotlib (modular for future chart types)
+    try:
+        fig, ax = plt.subplots()
+        x_vals = [r[0] for r in rows[:50]]
+        y_vals = [r[1] for r in rows[:50]]
+        if chart_type == "bar" or detected_chart_type == "bar":
+            ax.bar(x_vals, y_vals)
+            ax.set_xlabel(cols[0])
+            ax.set_ylabel(cols[1])
+        elif chart_type == "line" or detected_chart_type == "line":
+            ax.plot(x_vals, y_vals, marker='o')
+            ax.set_xlabel(cols[0])
+            ax.set_ylabel(cols[1])
+        elif chart_type == "pie" or detected_chart_type == "pie":
+            ax.pie(y_vals, labels=x_vals, autopct='%1.1f%%')
+        else:
+            plt.close(fig)
+            return jsonify({"error": f"Chart type '{chart_type or detected_chart_type}' not supported for image rendering."}), 400
+
+        chart_title = (chart_type or detected_chart_type or "").capitalize()
+        ax.set_title(f"{chart_title} Chart")
+        buf = io.BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format='png')
+        plt.close(fig)
+        buf.seek(0)
+        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+    except Exception as e:
+        return jsonify({"error": f"Chart rendering failed: {str(e)}"}), 500
+
+    # TODO: Add Redis/Supabase/Postgres hooks for scalable session cache
+
+    return jsonify({
+        "chart": chart_config,
+        "chart_image_base64": img_base64
+    }), 200
+
 
 # -------------------- Chat HTTP helpers (frontend compatibility) --------------------
 

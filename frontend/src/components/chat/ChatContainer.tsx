@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, createContext } from "react";
 import { getUserEmail } from "@/utils/supabase/getUserEmail";
 import { Database, AlertTriangle } from "lucide-react";
 import ChatInput from "./ChatInput";
@@ -42,6 +42,8 @@ interface SessionState {
   pendingWrite?: string;
   awaitingConfirmation?: boolean;
 }
+
+export const SessionContext = createContext<string | null>(null);
 
 export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -711,10 +713,13 @@ export default function ChatContainer() {
         </div>
       </div>
 
+
       {/* Messages Area */}
-      <div className="flex-1 min-h-0" style={{ backgroundColor: '#162A2C' }}>
-        <MessageList messages={messages} isLoading={loading} />
-      </div>
+      <SessionContext.Provider value={sessionId}>
+        <div className="flex-1 min-h-0" style={{ backgroundColor: '#162A2C' }}>
+          <MessageList messages={messages} isLoading={loading} />
+        </div>
+      </SessionContext.Provider>
 
       {/* Input Area */}
       <div className="flex-shrink-0 border-t" style={{ 
