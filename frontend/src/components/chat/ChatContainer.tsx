@@ -651,7 +651,7 @@ export default function ChatContainer() {
   }, []);
 
   return (
-    <div className="h-[calc(100vh-180px)] flex flex-col">
+    <div className="h-[calc(100vh-1px)] flex flex-col">
       {/* Chat Header */}
       <div className="flex-shrink-0 px-6 py-4 border-b" style={{ 
         backgroundColor: 'rgba(22, 42, 44, 0.98)',
