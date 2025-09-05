@@ -35,9 +35,7 @@ from nlp_to_sql import (
 
 
 app = Flask(__name__)
-CORS(app, resources={
-    r"/*": {"origins": ["http://localhost:3000", "https://ai-db-one.vercel.app/"]}}, supports_credentials=True)
-
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 bcrypt = Bcrypt(app)
 
 app.config["JWT_SECRET_KEY"] = "super-secret-key"  # TODO: set via env var
