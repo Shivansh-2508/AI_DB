@@ -18,6 +18,34 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Safe localStorage helpers
+const getStorageItem = (key: string): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const setStorageItem = (key: string, value: string): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, value);
+  } catch (error) {
+    console.error(`Failed to set localStorage item ${key}:`, error);
+  }
+};
+
+const removeStorageItem = (key: string): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.error(`Failed to remove localStorage item ${key}:`, error);
+  }
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -25,36 +53,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Load auth info from localStorage on mount
   useEffect(() => {
-    const savedToken = localStorage.getItem('authToken');
-    const savedUser = localStorage.getItem('authUser');
-    
-    if (savedToken && savedUser) {
+    const loadAuthFromStorage = () => {
       try {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
+        const savedToken = getStorageItem('authToken');
+        const savedUser = getStorageItem('authUser');
+        
+        if (savedToken && savedUser) {
+          // Validate token format (basic JWT check)
+          const tokenParts = savedToken.split('.');
+          if (tokenParts.length === 3) {
+            try {
+              // Check if token is expired (if it has exp claim)
+              const payload = JSON.parse(atob(tokenParts[1]));
+              const currentTime = Math.floor(Date.now() / 1000);
+              
+              if (payload.exp && payload.exp < currentTime) {
+                console.log('Token expired, clearing auth data');
+                removeStorageItem('authToken');
+                removeStorageItem('authUser');
+                return;
+              }
+            } catch (e) {
+              console.log('Token validation error:', e);
+            }
+            
+            setToken(savedToken);
+            setUser(JSON.parse(savedUser));
+            console.log('Auth restored from localStorage');
+          } else {
+            console.log('Invalid token format, clearing auth data');
+            removeStorageItem('authToken');
+            removeStorageItem('authUser');
+          }
+        }
       } catch (error) {
-        console.error('Error parsing saved user data:', error);
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('authUser');
+        console.error('Error loading auth from storage:', error);
+        removeStorageItem('authToken');
+        removeStorageItem('authUser');
+      } finally {
+        setIsLoading(false);
       }
-    }
-    setIsLoading(false);
+    };
+
+    loadAuthFromStorage();
   }, []);
 
   const setAuthInfo = (newToken: string, newUser: User) => {
     setToken(newToken);
     setUser(newUser);
     // Persist to localStorage
-    localStorage.setItem('authToken', newToken);
-    localStorage.setItem('authUser', JSON.stringify(newUser));
+    setStorageItem('authToken', newToken);
+    setStorageItem('authUser', JSON.stringify(newUser));
+    console.log('Auth info updated and persisted');
   };
 
   const logout = () => {
     setToken(null);
     setUser(null);
     // Clear from localStorage
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('authUser');
+    removeStorageItem('authToken');
+    removeStorageItem('authUser');
+    console.log('User logged out, auth data cleared');
   };
 
   return (

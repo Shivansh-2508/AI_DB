@@ -1,10 +1,12 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useContext } from "react";
 import { Loader2, Database, Bot, User } from "lucide-react";
 
 import MessageBubble, { MessageBubbleProps } from "./MessageBubble";
 import TableView from "./TableView";
 import ChartRenderer, { ChartConfig } from "./ChartRenderer";
+import { SessionContext } from "./ChatContainer";
+import { useAuth } from "@/context/AuthContext";
 
 export interface TableResult {
   columns: string[];
@@ -25,15 +27,12 @@ export interface MessageListProps {
   isLoading: boolean;
 }
 
-import { useContext } from "react";
-import { SessionContext } from "./ChatContainer";
-import { useAuth } from "@/context/AuthContext";
-
 export default function MessageList({ messages, isLoading }: MessageListProps) {
   const sessionId = useContext(SessionContext);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { token, logout } = useAuth();
   const authHeaders: Record<string,string> = token ? { Authorization: `Bearer ${token}` } : {};
+  
   // Track chart loading and configs per message id
   const [chartLoading, setChartLoading] = useState<{[id: string]: boolean}>({});
   const [charts, setCharts] = useState<{[id: string]: ChartConfig | null}>({});
@@ -85,8 +84,8 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
         y,
         data: safeRows
       };
-  const base = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:5000";
-  const res = await fetch(`${base}/chart`, {
+      const base = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:5000";
+      const res = await fetch(`${base}/chart`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
@@ -109,128 +108,149 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
   };
 
   return (
-    <div className="flex flex-col h-full" style={{ width: '100%' }}>
-      <div className="flex-1 overflow-y-auto p-6 space-y-4" style={{ backgroundColor: '#162A2C', borderRadius: 16, maxWidth: '1100px', margin: '0 auto', minWidth: '700px' }}>
-        {messages.map((message: Message) => {
-          const isUser = message.isUser || message.type === "user";
-          return (
-            <div
-              key={message.id}
-              className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'} w-full`}
-              style={{ width: '100%' }}
-            >
-              {/* AI bubble on left, user bubble on right */}
-              {!isUser && (
-                <div className="flex-shrink-0 mt-1">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #E91E63 0%, #14B8A6 100%)' }}>
-                    <Bot className="h-4 w-4 text-white" />
+    <div className="space-y-4 sm:space-y-6">
+      {messages.map((message: Message) => {
+        const isUser = message.isUser || message.type === "user";
+        const isSystem = message.type === "system";
+        const isError = message.isError || message.type === "error";
+        
+        return (
+          <div key={message.id} className={`flex gap-2 sm:gap-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            {/* Avatar - Mobile Optimized */}
+            {!isUser && !isSystem && (
+              <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-r from-emerald-500 to-blue-500 flex items-center justify-center">
+                <Bot className="h-3 w-3 sm:h-4 sm:w-4 text-white" />
+              </div>
+            )}
+            
+            {/* Message Content - Mobile Optimized */}
+            <div className={`max-w-[90%] sm:max-w-[85%] lg:max-w-[70%] ${isUser ? 'order-first' : ''}`}>
+              {isSystem ? (
+                <div className="text-center py-2">
+                  <span className="inline-block px-3 py-1 bg-gray-800/50 text-gray-400 text-xs rounded-full border border-gray-700/50">
+                    {message.text}
+                  </span>
+                </div>
+              ) : (
+                <div className={`rounded-xl sm:rounded-2xl px-3 py-2 sm:px-4 sm:py-3 ${
+                  isUser 
+                    ? 'bg-blue-600 text-white ml-auto' 
+                    : isError 
+                      ? 'bg-red-900/50 text-red-200 border border-red-700/50' 
+                      : 'bg-gray-800/80 text-gray-100 border border-gray-700/50'
+                } backdrop-blur-sm`}>
+                  
+                  {/* Message Header - Mobile Optimized */}
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium opacity-70">
+                      {isUser ? 'You' : isError ? 'Error' : 'Assistant'}
+                    </span>
+                    <span className="text-xs opacity-50">
+                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
                   </div>
-                </div>
-              )}
-              <div
-                className={`rounded-lg px-6 py-4 shadow-sm ${isUser ? 'rounded-br-2xl ml-auto' : 'rounded-bl-2xl mr-auto'}`}
-                style={{
-                  backgroundColor: isUser ? '#E3F2FD' : '#FEFCF6',
-                  border: `1px solid ${isUser ? '#BBDEFB' : '#D3C3B9'}`,
-                  maxWidth: '60%',
-                  minWidth: '340px',
-                  textAlign: isUser ? 'right' : 'left',
-                  marginLeft: isUser ? 'auto' : undefined,
-                  marginRight: !isUser ? 'auto' : undefined
-                }}
-              >
-                <div className="text-xs font-medium mb-1 opacity-70" style={{ color: '#162A2C', textAlign: isUser ? 'right' : 'left' }}>{isUser ? 'You' : 'AI'}</div>
-                <div style={{ color: '#162A2C', textAlign: isUser ? 'right' : 'left' }}>
-                  <MessageBubble {...message} />
-                </div>
-                {message.results ? (
-                  <div className="mt-2">
-                    <TableView results={message.results} />
-                    {message.sql && (
-                      <pre className="mt-3 text-xs bg-[#0F1720] text-[#E6EEF6] p-2 rounded">{String(message.sql)}</pre>
-                    )}
-                    {/* Chart button and chart for this table */}
-                    {isTableResult(message.results) && message.results.columns.length >= 2 && message.results.rows.length > 1 && (
-                      <div className="mt-3">
-                        <button
-                          className="bg-[#14B8A6] text-white px-4 py-2 rounded shadow hover:bg-[#0F1720] transition"
-                          onClick={() => handleGenerateChart(message)}
-                          disabled={chartLoading[message.id]}
-                          style={{ float: isUser ? 'right' : 'left' }}
-                        >
-                          {chartLoading[message.id] ? "Generating Chart..." : "Generate Chart"}
-                        </button>
-                        {charts[message.id] && (
-                          <div className="mt-4">
-                            <ChartRenderer config={charts[message.id]!} />
-                          </div>
+
+                  {/* Message Text - Mobile Optimized */}
+                  <div className="text-sm leading-relaxed">
+                    <MessageBubble {...message} />
+                  </div>
+
+                  {/* SQL Code Block - Mobile Optimized */}
+                  {message.sql && !isError && (
+                    <div className="mt-3 sm:mt-4 rounded-lg overflow-hidden border border-gray-600/50">
+                      <div className="bg-gray-900/80 px-2 sm:px-3 py-1.5 sm:py-2 border-b border-gray-600/50">
+                        <span className="text-xs font-mono text-gray-400 uppercase tracking-wide">Generated SQL</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <pre className="p-2 sm:p-3 text-xs font-mono text-gray-300 bg-gray-900/40 min-w-0">
+                          {String(message.sql)}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Results Table - Mobile Optimized */}
+                  {message.results && !isError && (
+                    <div className="mt-3 sm:mt-4 rounded-lg overflow-hidden border border-gray-600/50">
+                      <div className="bg-gray-900/80 px-2 sm:px-3 py-1.5 sm:py-2 border-b border-gray-600/50 flex items-center justify-between gap-2">
+                        <span className="text-xs font-mono text-gray-400 uppercase tracking-wide flex-1 truncate">
+                          Results ({(message.results as TableResult).rows?.length || 0} rows)
+                        </span>
+                        {isTableResult(message.results) && message.results.columns.length >= 2 && message.results.rows.length > 1 && (
+                          <button
+                            onClick={() => handleGenerateChart(message)}
+                            disabled={chartLoading[message.id]}
+                            className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3 py-1 rounded-md transition-colors disabled:opacity-50 flex-shrink-0"
+                          >
+                            {chartLoading[message.id] ? 'Gen...' : 'Chart'}
+                          </button>
                         )}
                       </div>
-                    )}
-                  </div>
-                ) : (() => {
-                  try {
-                    const jsonMatch = (message.text || "").match(/```json\n([\s\S]*?)```/i);
-                    if (jsonMatch && jsonMatch[1]) {
-                      const parsed = JSON.parse(jsonMatch[1]);
-                      return (
-                        <div className="mt-2">
-                          <TableView results={parsed} />
+                      <div className="max-h-100 sm:max-h-80 overflow-auto">
+                        <TableView results={message.results} />
+                      </div>
+                      
+                      {/* Chart Display - Mobile Optimized */}
+                      {charts[message.id] && (
+                        <div className="p-3 sm:p-4 border-t border-gray-600/50 bg-gray-900/20">
+                          <ChartRenderer config={charts[message.id]!} />
                         </div>
-                      );
-                    }
-                  } catch {
-                    // ignore parse errors
-                  }
-                  return null;
-                })()}
-                <div className="text-xs mt-1 opacity-50" style={{ color: '#162A2C', textAlign: isUser ? 'right' : 'left' }}>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-              </div>
-              {isUser && (
-                <div className="flex-shrink-0 mt-1">
-                  <div className="w-8 h-8 rounded-lg border flex items-center justify-center" style={{ backgroundColor: '#FEFCF6', borderColor: '#BBDEFB' }}>
-                    <User className="h-4 w-4" style={{ color: '#162A2C' }} />
-                  </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          );
-        })}
-        {/* Loading indicator */}
-        {isLoading && (
-          <div className="flex justify-start gap-3">
-            <div className="flex-shrink-0 mt-1">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #E91E63 0%, #14B8A6 100%)' }}>
-                <Bot className="h-4 w-4 text-white" />
+
+            {/* User Avatar - Mobile Optimized */}
+            {isUser && (
+              <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gray-600 flex items-center justify-center">
+                <User className="h-3 w-3 sm:h-4 sm:w-4 text-white" />
               </div>
-            </div>
-            <div className="max-w-[70%] rounded-lg rounded-bl-sm px-4 py-3 shadow-sm" style={{ backgroundColor: '#FEFCF6', border: '1px solid #D3C3B9' }}>
-              <div className="flex items-center gap-2" style={{ color: '#162A2C' }}>
-                <Loader2 className="h-4 w-4 animate-spin" style={{ color: '#14B8A6' }} />
-                <span className="text-sm">{getLoadingMessage()}</span>
-              </div>
-              <div className="flex gap-1 mt-2">
-                <div className="w-1 h-1 rounded-full animate-pulse" style={{ backgroundColor: '#14B8A6' }}></div>
-                <div className="w-1 h-1 rounded-full animate-pulse" style={{ backgroundColor: '#14B8A6', animationDelay: '0.2s' }}></div>
-                <div className="w-1 h-1 rounded-full animate-pulse" style={{ backgroundColor: '#14B8A6', animationDelay: '0.4s' }}></div>
-              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Loading Indicator - Mobile Optimized */}
+      {isLoading && (
+        <div className="flex gap-2 sm:gap-4 justify-start">
+          <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-r from-emerald-500 to-blue-500 flex items-center justify-center">
+            <Bot className="h-3 w-3 sm:h-4 sm:w-4 text-white" />
+          </div>
+          <div className="bg-gray-800/80 text-gray-100 border border-gray-700/50 backdrop-blur-sm rounded-xl sm:rounded-2xl px-3 py-2 sm:px-4 sm:py-3 max-w-xs">
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin text-emerald-400" />
+              <span className="text-sm">{getLoadingMessage()}</span>
             </div>
           </div>
-        )}
-        {/* Empty state */}
-        {messages.length === 0 && !isLoading && (
-          <div className="flex flex-col items-center justify-center h-64 text-center">
-            <div className="w-16 h-16 rounded-lg border flex items-center justify-center mb-4" style={{ backgroundColor: '#FEFCF6', borderColor: '#D3C3B9' }}>
-              <Database className="h-8 w-8" style={{ color: '#162A2C' }} />
-            </div>
-            <h3 className="text-lg font-medium mb-2" style={{ color: '#FEFCF6' }}>Ready to Query</h3>
-            <p className="max-w-md text-sm leading-relaxed opacity-80" style={{ color: '#D3C3B9' }}>
-              Ask me anything about your database. I can help you explore tables, run queries, and analyze your data with natural language.
-            </p>
+        </div>
+      )}
+
+      {/* Empty State - Mobile Optimized */}
+      {messages.length === 0 && !isLoading && (
+        <div className="flex flex-col items-center justify-center py-12 sm:py-20 text-center px-4">
+          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-r from-emerald-500 to-blue-500 flex items-center justify-center mb-4 sm:mb-6 shadow-lg">
+            <Database className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
           </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
+          <h3 className="text-lg sm:text-xl font-semibold text-white mb-2">Ready to explore your database</h3>
+          <p className="text-gray-400 max-w-md leading-relaxed text-sm sm:text-base mb-4 sm:mb-6">
+            Ask me anything about your database. I can help you query tables, analyze data, and generate insights using natural language.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-md">
+            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+              <div className="text-sm font-medium text-white mb-1">Try asking:</div>
+              <div className="text-xs text-gray-400">&ldquo;Show me all customers&rdquo;</div>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+              <div className="text-sm font-medium text-white mb-1">Or explore:</div>
+              <div className="text-xs text-gray-400">&ldquo;What tables are available?&rdquo;</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div ref={bottomRef} />
     </div>
   );
 }

@@ -41,16 +41,16 @@ export default function MessageBubble({
       const language = match[1] || '';
       const code = match[2] || '';
       parts.push(
-        <div key={parts.length} className="rounded border p-4 my-3 overflow-x-auto font-mono text-sm" style={{
-          backgroundColor: '#162A2C',
-          borderColor: '#D3C3B9'
+        <div key={parts.length} className="rounded-lg border overflow-x-auto font-mono text-sm my-3" style={{
+          backgroundColor: '#1a1a1a',
+          borderColor: '#374151'
         }}>
           {language && (
-            <div className="text-xs mb-2 uppercase tracking-wide" style={{ color: '#D3C3B9' }}>
+            <div className="text-xs mb-2 uppercase tracking-wide px-3 pt-2" style={{ color: '#9CA3AF' }}>
               {language}
             </div>
           )}
-          <pre className="leading-relaxed whitespace-pre-wrap" style={{ color: '#FEFCF6' }}>
+          <pre className="leading-relaxed whitespace-pre-wrap px-3 pb-2" style={{ color: '#F3F4F6' }}>
             {code}
           </pre>
         </div>
@@ -83,7 +83,7 @@ export default function MessageBubble({
     // Only call replace when processed is a string
     if (typeof processed === 'string') {
       processed = processed.replace(boldRegex, '<strong class="font-medium">$1</strong>');
-      processed = processed.replace(inlineCodeRegex, '<code class="px-2 py-1 rounded text-xs font-mono border" style="background-color: #162A2C; border-color: #D3C3B9; color: #FEFCF6;">$1</code>');
+      processed = processed.replace(inlineCodeRegex, '<code class="px-2 py-1 rounded text-xs font-mono border" style="background-color: #374151; border-color: #6B7280; color: #F3F4F6;">$1</code>');
     }
     
     return <span key={key} dangerouslySetInnerHTML={{ __html: processed }} />;
