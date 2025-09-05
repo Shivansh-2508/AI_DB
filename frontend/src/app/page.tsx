@@ -1,77 +1,18 @@
 
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/utils/supabase/client";
-import { LoginForm } from "@/components/login/loginForm";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Home() {
   const router = useRouter();
-  const supabase = createClient();
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
+  const { token } = useAuth();
   useEffect(() => {
-    const checkUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        router.replace("/chat");
-      }
-    };
-    checkUser();
-  }, [router, supabase.auth]);
-
-  // Manage body scroll when modal opens/closes
-  useEffect(() => {
-    if (showAdminModal) {
-      // Don't prevent body scroll on mobile - just add modal-open class
-      document.body.classList.add('modal-open');
-    } else {
-      document.body.classList.remove('modal-open');
+    if (token) {
+      router.replace('/dashboard');
     }
-
-    return () => {
-      document.body.classList.remove('modal-open');
-    };
-  }, [showAdminModal]);
-
-  const handleAdminLogin = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError(null);
-    
-    const formData = new FormData(e.currentTarget);
-    
-    try {
-      const email = formData.get("email") as string;
-      const password = formData.get("password") as string;
-      
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      
-      if (authError) {
-        setError(authError.message);
-        return;
-      }
-      
-      setShowAdminModal(false);
-      router.push("/chat");
-    } catch (error) {
-      console.error("Login failed:", error);
-      setError("An unexpected error occurred. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [token, router]);
 
   return (
     <div className="min-h-screen relative" style={{ backgroundColor: '#FEFCF6' }} data-scroll-container>
@@ -110,24 +51,29 @@ export default function Home() {
           <div className="w-7 h-7 xs:w-8 xs:h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#162A2C' }}>
             <span className="text-sm xs:text-lg sm:text-xl font-bold" style={{ color: '#FEFCF6' }}>A</span>
           </div>
-          <span className="text-base xs:text-lg sm:text-xl font-bold" style={{ color: '#162A2C' }}>AiDb</span>
+            <span className="text-base xs:text-lg sm:text-xl font-bold" style={{ color: '#162A2C' }}>AiDb</span>
         </div>
-        
-        <Button 
-          onClick={() => {
-            setShowAdminModal(true);
-            setError(null);
-          }}
-          className="px-2 xs:px-3 sm:px-4 py-1.5 xs:py-2 rounded-lg font-medium transition-all duration-300 hover:scale-105 text-xs xs:text-sm"
-          style={{ 
-            backgroundColor: '#D3C3B9',
-            color: '#162A2C',
-            border: '2px solid #D3C3B9'
-          }}
-        >
-          <span className="hidden xs:inline">Admin Login</span>
-          <span className="xs:hidden">Admin Login</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => router.push('/login')}
+            className="px-2 xs:px-3 sm:px-4 py-1.5 xs:py-2 rounded-lg font-medium transition-all duration-300 hover:scale-105 text-xs xs:text-sm"
+            style={{
+              backgroundColor: '#162A2C',
+              color: '#FEFCF6',
+              border: '2px solid #162A2C'
+            }}
+          >Login</Button>
+          <Button
+            onClick={() => router.push('/signup')}
+            variant="outline"
+            className="px-2 xs:px-3 sm:px-4 py-1.5 xs:py-2 rounded-lg font-medium transition-all duration-300 hover:scale-105 text-xs xs:text-sm border-2"
+            style={{
+              backgroundColor: '#D3C3B9',
+              color: '#162A2C',
+              border: '2px solid #D3C3B9'
+            }}
+          >Sign Up</Button>
+        </div>
       </header>
 
       {/* Main Content */}
@@ -382,7 +328,7 @@ export default function Home() {
             </p>
             
             <div className="space-y-4 xs:space-y-6">
-              <LoginForm />
+              {/* Removed inline LoginForm; use /login or /signup pages */}
               
               <div className="pt-4 xs:pt-6 border-t" style={{ borderColor: '#D3C3B9' }}>
                 <div className="flex justify-center space-x-6 xs:space-x-8 sm:space-x-12">
@@ -434,140 +380,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Admin Login Modal */}
-      {showAdminModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 xs:p-4 overflow-y-auto">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowAdminModal(false)}
-          ></div>
-          
-          {/* Modal */}
-          <div className="relative w-full max-w-sm xs:max-w-md animate-[slideInFromBottom_0.3s_ease-out] my-auto">
-            <Card 
-              className="shadow-2xl border-2 max-h-[90vh] overflow-y-auto"
-              style={{ backgroundColor: '#FEFCF6', borderColor: '#D3C3B9' }}
-            >
-              <CardHeader className="text-center pb-4 xs:pb-6">
-                <CardTitle 
-                  className="text-xl xs:text-2xl font-bold flex items-center justify-center space-x-2"
-                  style={{ color: '#162A2C' }}
-                >
-                  <div 
-                    className="w-7 h-7 xs:w-8 xs:h-8 rounded-lg flex items-center justify-center"
-                    style={{ backgroundColor: '#162A2C' }}
-                  >
-                    <span className="text-base xs:text-lg font-bold" style={{ color: '#FEFCF6' }}>A</span>
-                  </div>
-                  <span>Admin Access</span>
-                </CardTitle>
-                <CardDescription style={{ color: '#162A2C' }} className="text-sm xs:text-base">
-                  Enter your admin credentials to access the dashboard
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-4 xs:px-6">
-                <form onSubmit={handleAdminLogin}>
-                  <div className="space-y-3 xs:space-y-4">
-                    <div className="space-y-1 xs:space-y-2">
-                      <Label 
-                        htmlFor="admin-email" 
-                        className="font-medium text-sm xs:text-base"
-                        style={{ color: '#162A2C' }}
-                      >
-                        Admin Email
-                      </Label>
-                      <Input
-                        id="admin-email"
-                        name="email"
-                        type="email"
-                        placeholder="admin@aidb.com"
-                        required
-                        className="border-2 transition-all duration-300 focus:scale-[1.01] h-10 xs:h-11 text-sm xs:text-base"
-                        style={{ 
-                          borderColor: '#D3C3B9',
-                          color: '#162A2C'
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-1 xs:space-y-2">
-                      <Label 
-                        htmlFor="admin-password" 
-                        className="font-medium text-sm xs:text-base"
-                        style={{ color: '#162A2C' }}
-                      >
-                        Password
-                      </Label>
-                      <Input 
-                        id="admin-password" 
-                        name="password" 
-                        type="password" 
-                        placeholder="••••••••"
-                        required 
-                        className="border-2 transition-all duration-300 focus:scale-[1.01] h-10 xs:h-11 text-sm xs:text-base"
-                        style={{ 
-                          borderColor: '#D3C3B9',
-                          color: '#162A2C'
-                        }}
-                      />
-                    </div>
-                    
-                    {/* Error Display */}
-                    {error && (
-                      <div className="p-3 rounded-lg border" style={{ 
-                        backgroundColor: '#FEE2E2', 
-                        borderColor: '#FECACA',
-                        color: '#991B1B'
-                      }}>
-                        <p className="text-xs xs:text-sm font-medium">{error}</p>
-                      </div>
-                    )}
-                    
-                    <div className="flex space-x-2 pt-3 xs:pt-4">
-                      <Button 
-                        type="button"
-                        variant="outline"
-                        onClick={() => setShowAdminModal(false)}
-                        disabled={isLoading}
-                        className="flex-1 border-2 font-medium transition-all duration-300 h-10 xs:h-11 text-sm xs:text-base"
-                        style={{ 
-                          borderColor: '#D3C3B9',
-                          color: '#162A2C'
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        type="submit"
-                        disabled={isLoading}
-                        className="flex-1 font-semibold border-2 transition-all duration-300 hover:scale-[1.02] h-10 xs:h-11 text-sm xs:text-base"
-                        style={{ 
-                          backgroundColor: '#162A2C',
-                          borderColor: '#162A2C',
-                          color: '#FEFCF6'
-                        }}
-                      >
-                        {isLoading ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <div className="w-3 h-3 xs:w-4 xs:h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            <span className="hidden xs:inline">Signing In...</span>
-                            <span className="xs:hidden">...</span>
-                          </span>
-                        ) : (
-                          <>
-                            <span className="hidden xs:inline">Sign In →</span>
-                            <span className="xs:hidden">Sign In</span>
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      )}
+  {/* Supabase admin login modal removed */}
     </div>
   );
 }

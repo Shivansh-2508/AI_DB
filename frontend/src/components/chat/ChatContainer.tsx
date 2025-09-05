@@ -1,7 +1,7 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
-import { getUserEmail } from "@/utils/supabase/getUserEmail";
-import { Database, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useRef, useCallback, createContext, useMemo } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { Database } from "lucide-react";
 import ChatInput from "./ChatInput";
 import MessageList, { Message } from "./MessageList";
 
@@ -43,9 +43,30 @@ interface SessionState {
   awaitingConfirmation?: boolean;
 }
 
+// Helper function to normalize results to TableResult format
+function normalizeResults(data: ApiResponse): { columns: string[]; rows: Record<string, unknown>[] } | undefined {
+  if (data && Array.isArray(data.columns) && Array.isArray(data.results)) {
+    return { columns: data.columns as string[], rows: data.results as Record<string, unknown>[] };
+  } else if (Array.isArray(data.results)) {
+    // legacy: derive columns from first row but keep insertion order
+    const rows = data.results as Record<string, unknown>[];
+    const columns = rows.length ? Object.keys(rows[0]) : [];
+    return { columns, rows };
+  } else if (data.results) {
+    // non-array results (object / scalar) — pass through as a single-row table
+    const rows = [data.results as Record<string, unknown>];
+    const columns = Object.keys(rows[0]);
+    return { columns, rows };
+  }
+  return undefined;
+}
+
+export const SessionContext = createContext<string | null>(null);
+
 export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const { user, token, logout } = useAuth();
+  const userEmail = user?.email || null;
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [sessionState, setSessionState] = useState<SessionState>({
@@ -54,6 +75,9 @@ export default function ChatContainer() {
     messageCount: 0,
     awaitingConfirmation: false
   });
+  const authHeaders = useMemo<Record<string,string>>(() => {
+    return token ? { Authorization: `Bearer ${token}` } : {} as Record<string,string>;
+  }, [token]);
   
   // Phase 3: Persistent session ID with cleanup
   const [sessionId] = useState(() => {
@@ -103,9 +127,9 @@ export default function ChatContainer() {
   const clearChatHistory = useCallback(async () => {
     setClearing(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/clear`, {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/clear`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ session_id: sessionId }),
       });
 
@@ -196,9 +220,9 @@ export default function ChatContainer() {
     });
 
     // Persist to backend
-    fetch(`${process.env.NEXT_PUBLIC_API_BASE}/chat`, {
+  fetch(`${process.env.NEXT_PUBLIC_API_BASE}/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify({
         email: userEmail,
         sessionId: sessionId,
@@ -210,7 +234,7 @@ export default function ChatContainer() {
   sql: msg.sql ?? undefined
       })
     }).catch(err => console.error("Failed to save message to backend", err));
-}, [generateMessageId, sessionId, userEmail]);
+}, [generateMessageId, sessionId, userEmail, authHeaders]);
 
   const updateActivity = useCallback(() => {
     // Only set isActive to true if not currently inactive
@@ -252,9 +276,9 @@ export default function ChatContainer() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/confirm`, {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/confirm`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
           session_id: sessionId,
           decision: decision
@@ -265,10 +289,13 @@ export default function ChatContainer() {
       
         if (res.ok) {
         if (decision === "yes") {
+          // Use the normalizeResults helper function to properly format the results
+          const normalizedResults = normalizeResults(data);
+          
           addMessageWithActivity({
             text: `✅ Query executed successfully!`,
             type: "assistant",
-            results: data.results,
+            results: normalizedResults,
             sql: data.sql
           });
         } else {
@@ -299,14 +326,8 @@ export default function ChatContainer() {
     }
   };
 
-  // Fetch user email on mount (only set email here; don't overwrite messages)
+  // User email now derived from AuthContext; no async fetch needed
   useEffect(() => {
-    async function fetchEmail() {
-      const email = await getUserEmail();
-      setUserEmail(email);
-      // Do NOT set welcome message here to avoid overwriting persisted history loaded later
-    }
-    fetchEmail();
     updateActivity();
   }, [updateActivity]);
 
@@ -320,8 +341,12 @@ export default function ChatContainer() {
 
     async function loadHistory() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/${sessionId}`);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/${sessionId}`, { headers: { ...authHeaders } });
         const data = await res.json();
+        if (res.status === 401) {
+          logout();
+          return;
+        }
         if (cancelled) return;
 
         const history = data.history || [];
@@ -461,7 +486,7 @@ export default function ChatContainer() {
           `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...authHeaders },
             body: JSON.stringify({ 
               email: userEmail, 
               session_id: sessionId 
@@ -470,6 +495,10 @@ export default function ChatContainer() {
         );
 
         const data = await res.json();
+        if (res.status === 401) {
+          logout();
+          return;
+        }
         if (res.ok) {
           console.log("Schema cached:", data.schema_summary);
           addMessageWithActivity({
@@ -516,12 +545,13 @@ export default function ChatContainer() {
     setSessionState(prev => ({ ...prev, messageCount: prev.messageCount + 1 }));
     setLoading(true);
 
+    let res: Response | undefined;
     try {
-      const res = await fetch(
+      res = await fetch(
         `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/ask`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({
             message: text,
             session_id: sessionId,
@@ -531,66 +561,48 @@ export default function ChatContainer() {
       );
 
       const data: ApiResponse = await res.json();
+      if (res.status === 401) {
+        logout();
+        return;
+      }
 
-  if (!res.ok || data.error) {
-        // Phase 3: Enhanced error handling with suggestions
+      if (!res.ok || data.error) {
         let errorMsg = data.error || "Unable to process your request. Please try again.";
         if (data.suggestions) {
           errorMsg += `\n\n**Suggestions:**\n${data.suggestions}`;
         }
-        
         addMessageWithActivity({
           text: errorMsg,
           type: "error"
         });
       } else {
-        // Phase 3: Handle all response types
         if (data.clarifier) {
-          // Write confirmation or clarification needed
           if (data.clarifier.includes("modify data") || data.clarifier.includes("Do you want me to run it")) {
-            setSessionState(prev => ({ 
-              ...prev, 
+            setSessionState(prev => ({
+              ...prev,
               awaitingConfirmation: true,
-              pendingWrite: data.sql 
+              pendingWrite: data.sql
             }));
-            
             addMessageWithActivity({
               text: `⚠️ **Write Operation Detected**\n\n${data.clarifier}`,
               type: "assistant"
             });
-            
-            // Add confirmation buttons (you'll need to implement these in MessageList)
             addMessageWithActivity({
               text: "🤔 **Confirm Action:**\n• Type 'yes' to proceed\n• Type 'no' to cancel",
               type: "system"
             });
           } else {
-            // Regular clarification
             addMessageWithActivity({
               text: `🤔 ${data.clarifier}`,
               type: "assistant"
             });
           }
         } else {
-          // Regular query response: attach structured results & sql
           const assistantTextParts: string[] = [];
-          if (data.message) assistantTextParts.push(data.message);
-          if (data.sql) assistantTextParts.push("Generated SQL available.");
+            if (data.message) assistantTextParts.push(data.message);
+            if (data.sql) assistantTextParts.push("Generated SQL available.");
 
-          // Normalize backend results: prefer explicit columns metadata to preserve order
-          type Normalized = { columns?: string[]; rows?: Record<string, unknown>[] };
-          let normalizedResults: Normalized | undefined = undefined;
-          if (data && Array.isArray(data.columns) && Array.isArray(data.results)) {
-            normalizedResults = { columns: data.columns as string[], rows: data.results as Record<string, unknown>[] };
-          } else if (Array.isArray(data.results)) {
-            // legacy: derive columns from first row but keep insertion order
-            const rows = data.results as Record<string, unknown>[];
-            const columns = rows.length ? Object.keys(rows[0]) : [];
-            normalizedResults = { columns, rows };
-          } else if (data.results) {
-            // non-array results (object / scalar) — pass through as a single-row table
-            normalizedResults = { rows: [data.results as Record<string, unknown>] };
-          }
+          const normalizedResults = normalizeResults(data);
 
           addMessageWithActivity({
             text: assistantTextParts.join("\n\n") || "Here are the results:",
@@ -610,7 +622,7 @@ export default function ChatContainer() {
       setLoading(false);
       updateActivity();
     }
-  };
+  }; // end sendToBackend
 
   // Phase 3: Handle confirmation responses
   const handleUserInput = async (text: string) => {
@@ -640,94 +652,104 @@ export default function ChatContainer() {
   }, []);
 
   return (
-    <div className="h-[calc(100vh-180px)] flex flex-col">
-      {/* Chat Header */}
-      <div className="flex-shrink-0 px-6 py-4 border-b" style={{ 
-        backgroundColor: 'rgba(22, 42, 44, 0.98)',
-        borderColor: 'rgba(211, 195, 185, 0.3)'
-      }}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {/* AI Icon with gradient */}
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ 
-              background: 'linear-gradient(135deg, #E91E63 0%, #14B8A6 100%)'
-            }}>
-              <Database className="h-4 w-4 text-white" />
-            </div>
-            
-            <div>
-              <h1 className="text-base font-medium" style={{ color: '#FEFCF6' }}>
-                Database Assistant
-              </h1>
-              <div className="flex items-center gap-2 text-xs font-mono" style={{ color: '#D3C3B9' }}>
-                <span>{sessionState.messageCount} queries</span>
-                {sessionState.isActive && (
-                  <>
-                    <span>•</span>
-                    <div className="flex items-center gap-1">
-                      <div className="w-1 h-1 rounded-full bg-green-400"></div>
-                      <span>active</span>
-                    </div>
-                  </>
-                )}
+    <div className="h-screen w-full overflow-hidden bg-gradient-to-br from-slate-900 via-gray-900 to-slate-800">
+      {/* Top Header Bar - Mobile Optimized */}
+      <div className="sticky top-0 z-50 backdrop-blur-xl bg-black/20 border-b border-white/10">
+        <div className="w-full px-3 sm:px-4 lg:px-6 py-2 sm:py-3">
+          <div className="flex items-center justify-between">
+            {/* Left: Brand & Status */}
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-gradient-to-r from-emerald-500 to-blue-500 flex items-center justify-center shadow-lg flex-shrink-0">
+                <Database className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h1 className="text-white font-semibold text-sm sm:text-lg truncate">
+                  <span className="hidden sm:inline">AI Database Assistant</span>
+                  <span className="sm:hidden">AI DB</span>
+                </h1>
+                <div className="hidden sm:flex items-center gap-3 text-xs text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <span className={`w-2 h-2 rounded-full ${sessionState.isActive ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`}></span>
+                    {sessionState.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                  <span>•</span>
+                  <span>{sessionState.messageCount} queries</span>
+                  {sessionState.awaitingConfirmation && (
+                    <>
+                      <span>•</span>
+                      <span className="text-yellow-400 font-medium">Awaiting confirmation</span>
+                    </>
+                  )}
+                </div>
+                {/* Mobile Status */}
+                <div className="sm:hidden flex items-center gap-2 text-xs text-gray-400">
+                  <span className={`w-1.5 h-1.5 rounded-full ${sessionState.isActive ? 'bg-green-400' : 'bg-gray-500'}`}></span>
+                  <span>{sessionState.messageCount} queries</span>
+                  {sessionState.awaitingConfirmation && (
+                    <span className="text-yellow-400">• Confirm</span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-          
-          {/* Status and Controls */}
-          <div className="flex items-center gap-3">
-             {/* Session Status */}
-             {!sessionState.isActive && (
-               <div className="flex items-center gap-1.5 text-xs font-mono" style={{ color: '#D3C3B9' }}>
-                 <div className="w-1 h-1 rounded-full" style={{ backgroundColor: '#D3C3B9' }}></div>
-                 <span>inactive</span>
-               </div>
-             )}
-             
-             {/* Confirmation Status */}
-             {sessionState.awaitingConfirmation && (
-               <div className="flex items-center gap-1.5 text-xs text-yellow-400 font-mono">
-                 <AlertTriangle className="h-3 w-3" />
-                 <span>confirm</span>
-               </div>
-             )}
 
-             {/* Clear Chat Button */}
-             <button
-               type="button"
-               disabled={clearing}
-               onClick={() => {
-                 if (typeof window !== 'undefined' && window.confirm('Clear all chat history for this session?')) {
-                   clearChatHistory();
-                 }
-               }}
-               className="text-xs hover:text-opacity-80 transition-colors duration-200 font-mono"
-               style={{ color: '#D3C3B9' }}
-               aria-label="Clear chat history"
-             >
-               {clearing ? 'clearing...' : 'clear'}
-             </button>
-           </div>
+            {/* Right: Action Buttons - Mobile Optimized */}
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <button
+                onClick={() => {
+                  if (window.confirm('Clear all chat history for this session?')) {
+                    clearChatHistory();
+                  }
+                }}
+                disabled={clearing}
+                className="px-2 py-1.5 sm:px-3 text-xs sm:text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 rounded-md sm:rounded-lg transition-all duration-200 disabled:opacity-50"
+              >
+                {clearing ? 'Clearing...' : 'Clear'}
+              </button>
+              <button
+                onClick={() => {
+                  logout();
+                  window.location.href = '/';
+                }}
+                className="px-2 py-1.5 sm:px-3 text-xs sm:text-sm font-medium text-gray-300 hover:text-white hover:bg-red-500/20 rounded-md sm:rounded-lg transition-all duration-200"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Messages Area */}
-      <div className="flex-1 min-h-0" style={{ backgroundColor: '#162A2C' }}>
-        <MessageList messages={messages} isLoading={loading} />
-      </div>
+      {/* Main Chat Area - Mobile Optimized */}
+      <div className="flex-1 flex flex-col h-[calc(100vh-64px)] sm:h-[calc(100vh-80px)]">
+        <SessionContext.Provider value={sessionId}>
+          {/* Messages Container - Mobile Optimized */}
+          <div className="flex-1 overflow-y-auto overscroll-behavior-y-contain">
+            <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 lg:px-6 py-3 sm:py-6">
+              <MessageList messages={messages} isLoading={loading} />
+            </div>
+          </div>
 
-      {/* Input Area */}
-      <div className="flex-shrink-0 border-t" style={{ 
-        backgroundColor: 'rgba(22, 42, 44, 0.98)',
-        borderColor: 'rgba(211, 195, 185, 0.3)'
-      }}>
-        <ChatInput 
-          onSend={handleUserInput} 
-          disabled={loading}
-          placeholder="Ask about your database..."
-          awaitingConfirmation={sessionState.awaitingConfirmation}
-          sessionActive={sessionState.isActive}
-        />
+          {/* Input Container - Mobile Optimized */}
+          <div className="sticky bottom-0 z-40 bg-gradient-to-t from-slate-900 to-transparent pt-3 sm:pt-6 pb-3 sm:pb-6">
+            <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 lg:px-6">
+              <div className="bg-gray-800/90 sm:bg-gray-800/80 backdrop-blur-xl rounded-xl sm:rounded-2xl border border-gray-700/50 shadow-2xl">
+                <ChatInput 
+                  onSend={handleUserInput} 
+                  disabled={loading || !sessionState.isActive}
+                  placeholder={
+                    sessionState.awaitingConfirmation 
+                      ? "Type 'yes' or 'no' to confirm..." 
+                      : sessionState.isActive 
+                        ? "Ask me anything about your database..." 
+                        : "Session inactive - please refresh"
+                  }
+                  awaitingConfirmation={sessionState.awaitingConfirmation}
+                  sessionActive={sessionState.isActive}
+                />
+              </div>
+            </div>
+          </div>
+        </SessionContext.Provider>
       </div>
     </div>
   );

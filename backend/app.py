@@ -1,5 +1,17 @@
-from flask import Flask, request, jsonify
+import traceback
+from flask import Flask, request, jsonify, Blueprint
 from flask_cors import CORS
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import (
+    JWTManager, create_access_token,
+    jwt_required, get_jwt_identity,
+    exceptions as jwt_exceptions
+)
+from jwt.exceptions import ExpiredSignatureError
+import datetime
+import io
+import base64
+import matplotlib.pyplot as plt
 
 from db import (
     execute_query,
@@ -10,40 +22,194 @@ from db import (
     get_chat_history,
     clear_chat_session,
 )
-from nlp_to_sql import generate_sql_from_chat_history, maybe_generate_clarifier, rewrite_db_error, suggest_next_commands
+from nlp_to_sql import (
+    generate_sql_from_chat_history,
+    maybe_generate_clarifier,
+    rewrite_db_error,
+    suggest_next_commands,
+    detect_chartable,
+    cache_ai_table
+)
+
+# -------------------- App + Extensions --------------------
+
 
 app = Flask(__name__)
-# Allow CORS from the frontend during local development (preflight + credentials)
-CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "http://127.0.0.1:3000", "https://ai-db-one.vercel.app"]}},
-     supports_credentials=True,
-     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+CORS(app, resources={
+     r"/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
+
+bcrypt = Bcrypt(app)
+
+app.config["JWT_SECRET_KEY"] = "super-secret-key"  # TODO: set via env var
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = datetime.timedelta(hours=1)
+jwt = JWTManager(app)
+
+# --- JWT and General Error Handlers for Debugging ---
+
+
+@app.errorhandler(jwt_exceptions.NoAuthorizationError)
+def handle_no_auth_error(e):
+    print("[JWT ERROR] NoAuthorizationError:", str(e))
+    print("[JWT ERROR] Authorization header:",
+          request.headers.get("Authorization"))
+    return jsonify({"error": "No valid JWT provided", "details": str(e)}), 422
+
+
+@app.errorhandler(jwt_exceptions.JWTDecodeError)
+def handle_jwt_decode_error(e):
+    print("[JWT ERROR] JWTDecodeError:", str(e))
+    print("[JWT ERROR] Authorization header:",
+          request.headers.get("Authorization"))
+    return jsonify({"error": "JWT decode error", "details": str(e)}), 422
+
+
+@app.errorhandler(ExpiredSignatureError)
+def handle_jwt_expired_error(e):
+    print("[JWT ERROR] ExpiredSignatureError:", str(e))
+    print("[JWT ERROR] Authorization header:",
+          request.headers.get("Authorization"))
+    return jsonify({"error": "JWT expired", "details": str(e)}), 422
+
+
+@app.errorhandler(Exception)
+def handle_general_error(e):
+    print("[GENERAL ERROR]", str(e))
+    print("[GENERAL ERROR] Authorization header:",
+          request.headers.get("Authorization"))
+    traceback.print_exc()
+    return jsonify({"error": str(e)}), 500
+
+
+# Create API Blueprint
+api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+# -------------------- Auth Routes (in blueprint) --------------------
+
+
+@api_bp.route('/auth/signup', methods=['POST'])
+def signup():
+    data = request.get_json(silent=True) or {}
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({"error": "email and password required"}), 400
+
+    existing = execute_query(
+        "SELECT user_id FROM users WHERE email = %s", (email,))
+    if existing and len(existing.get("rows", [])) > 0:
+        return jsonify({"error": "Email already in use"}), 400
+
+    hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
+    execute_query(
+        "INSERT INTO users (email, hashed_pw, role) VALUES (%s, %s, %s)",
+        (email, hashed_pw, "user")
+    )
+
+    return jsonify({"message": "Signup successful"}), 201
+
+
+@api_bp.route('/auth/login', methods=['POST'])
+def login():
+    try:
+        data = request.get_json() or {}
+        email = data.get('email')
+        password = data.get('password')
+
+        print(f"Login attempt for email: {email}")  # Debug log
+
+        if not email or not password:
+            print("Missing email or password")
+            return jsonify({"error": "email and password required"}), 400
+
+        user = execute_query(
+            "SELECT user_id, hashed_pw, role FROM users WHERE email = %s",
+            (email,)
+        )
+
+        if not user or len(user) == 0:
+            print(f"User not found: {email}")
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        user_id = user[0]["user_id"]
+        hashed_pw = user[0]["hashed_pw"]
+        role = user[0]["role"]
+
+        if not bcrypt.check_password_hash(hashed_pw, password):
+            print(f"Password check failed for: {email}")
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        # Use user_id as string for JWT identity
+        access_token = create_access_token(identity=str(user_id))
+        # Return user data with 'id' field for frontend consistency
+        user_data = {
+            "id": user_id,
+            "user_id": user_id,
+            "email": email,
+            "role": role
+        }
+        print(f"Login successful for: {email}, token created")
+        return jsonify({
+            "access_token": access_token,
+            "user": user_data
+        }), 200
+
+    except Exception as e:
+        print(f"Login error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@api_bp.route('/auth/protected', methods=['GET'])
+@jwt_required()
+def protected():
+    try:
+        current_user_id = get_jwt_identity()
+        # Debug log
+        print(f"Protected route accessed by user_id: {current_user_id}")
+        response_data = {
+            "message": "Protected route accessed successfully",
+            "user_id": current_user_id
+        }
+        return jsonify(response_data), 200
+
+    except Exception as e:
+        print(f"Protected route error: {str(e)}")
+        return jsonify({"error": "Failed to access protected route"}), 500
+
+
+@api_bp.route('/auth/debug-token', methods=['GET'])
+@jwt_required()
+def debug_token():
+    try:
+        current_user = get_jwt_identity()
+        return jsonify({
+            "message": "Token debug info",
+            "token_payload": current_user,
+            "token_type": type(current_user).__name__
+        }), 200
+    except Exception as e:
+        return jsonify({"error": f"Debug error: {str(e)}"}), 500
+
+
+# Register the blueprint
+app.register_blueprint(api_bp)
 
 # -------------------- In-memory chat history (MVP) --------------------
-chat_history = {}
 
-# Pending write queries: { sessionId: {"sql": "...", "user_id": "..."} }
+chat_history = {}
+last_results_cache = {}
 pending_queries = {}
 
 
 def remember(session_id: str, role: str, content: object, message_id: str | None = None) -> None:
-    """Persist a chat turn using db.save_message. Accepts optional message_id.
-
-    role should be one of 'user'|'assistant'|'system'|'error'.
-    """
-    # Use save_message helper (which will write to Supabase/Postgres when configured)
     try:
         save_message(session_id, message_id, content, role)
     except Exception:
-        # Best-effort: fall back to in-memory append to keep behavior if DB is temporarily unavailable
         chat_history.setdefault(session_id, []).append(
             {"role": role, "content": content})
 
 
 def normalize_history(raw_history):
-    """Normalize diverse history formats (DB rows, in-memory dicts, or legacy shapes)
-    into a consistent list of objects: { role, content, message_id, timestamp }.
-    """
     normalized = []
     for entry in (raw_history or []):
         if isinstance(entry, dict):
@@ -60,17 +226,12 @@ def normalize_history(raw_history):
                 'timestamp': timestamp,
             })
         else:
-            # unexpected format: stringify
             normalized.append({'role': 'assistant', 'content': str(
                 entry), 'message_id': None, 'timestamp': None})
     return normalized
 
 
 def get_history(session_id: str):
-    """Return full chat history for a session (DB-backed) and normalize entries.
-
-    Ensures frontend always receives a consistent structure when fetching history on load/reload.
-    """
     try:
         raw = get_chat_history(session_id)
         return normalize_history(raw)
@@ -86,66 +247,40 @@ def clear_history(session_id: str) -> None:
 
 
 def cache_user_schema(user_id, schema_name="public"):
-    """Cache table names + fields for a user."""
     return cache_schema_for_user(user_id, schema_name)
 
-# -------------------- Auth (dummy) --------------------
-
-
-@app.route('/login', methods=['POST'])
-def login():
-    data = request.get_json(silent=True) or {}
-    user_id = data.get('email')
-    password = data.get('password')
-
-    if not user_id or not password:
-        return jsonify({"error": "email and password required"}), 400
-
-    # Dummy auth
-    return jsonify({"message": "Login successful"}), 200
-
-# -------------------- Chat init / schema prefetch --------------------
+# -------------------- Chat Routes --------------------
 
 
 @app.route('/chat', methods=['POST', 'PUT'])
+@jwt_required()
 def chat_handler():
-    """Handles two things depending on payload:
-    - If payload includes a message (content/message/messageId), persist it to chat storage.
-    - Otherwise, treat as schema prefetch request (expects 'email'/'user_id' and 'session_id').
-    This keeps compatibility with the frontend which POSTs both for prefetch and message saves.
-    """
     data = request.get_json(silent=True) or {}
 
-    # Normalize common keys from frontend variations
-    user_id = data.get('email') or data.get('user_id')
-    session_id = data.get('sessionId') or data.get(
-        'session_id') or data.get('session') or 'default'
+    # Always trust JWT for user identity
+    jwt_user_id = get_jwt_identity()
+    user_id = jwt_user_id
+    session_id = data.get('sessionId') or data.get('session_id') or 'default'
 
-    # Message save path (supports both POST and PUT semantics)
-    # Accept multiple key names for robustness
     message_id = data.get('messageId') or data.get(
         'message_id') or data.get('id')
     content = data.get('content') or data.get('text') or data.get('message')
     role = (data.get('role') or data.get('type') or 'assistant')
 
     if content:
-        # Persist message
         try:
             save_message(session_id, message_id, content, role)
             return jsonify({"message": "saved", "history": get_history(session_id)}), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
-    # Otherwise: schema prefetch / chat init flow
     if not user_id:
         return jsonify({"error": "email required"}), 400
 
-    # Prefetch + cache schema
     schema = get_cached_schema(user_id)
     if not schema:
         schema = cache_user_schema(user_id)
 
-    # Ensure session exists (DB-backed get_history will return an array)
     _ = get_history(session_id)
 
     return jsonify({
@@ -154,62 +289,71 @@ def chat_handler():
         "history": get_history(session_id),
     }), 200
 
-# -------------------- Ask (NL → SQL using chat history) --------------------
+# -------------------- Ask (NL → SQL) --------------------
 
 
 @app.route('/ask', methods=['POST'])
+@jwt_required()
 def ask():
     data = request.get_json(silent=True) or {}
     user_input = data.get('message', '').strip()
-    # normalize session id key names (frontend may send session_id or sessionId)
     session_id = data.get('session_id') or data.get('sessionId') or 'default'
-    user_id = data.get('email')
+    user_id = get_jwt_identity()
 
     if not user_input:
         return jsonify({"error": "Message is required."}), 400
     if not user_id:
         return jsonify({"error": "email required"}), 400
 
-    schema = get_cached_schema(user_id) or cache_user_schema(user_id)
+    schema = get_cached_schema(user_id)
+    if not schema:
+        schema = cache_user_schema(user_id)
 
-    # Log user input
     remember(session_id, "user", user_input)
-
-    # Clarifier check — include recent chat history so the LLM can use context
-    clarifier = maybe_generate_clarifier(
-        user_input, schema, get_history(session_id))
+    history = get_history(session_id)
+    clarifier = maybe_generate_clarifier(user_input, schema, history)
     if clarifier:
         remember(session_id, "assistant", clarifier)
-        return jsonify({"clarifier": clarifier, "history": get_history(session_id)}), 200
+        return jsonify({"clarifier": clarifier, "history": history}), 200
 
-    # Generate SQL
-    sql_query = generate_sql_from_chat_history(get_history(session_id), schema)
+    sql_query = generate_sql_from_chat_history(history, schema)
 
-    # Write protection
     if is_write_query(sql_query):
         pending_queries[session_id] = {"sql": sql_query, "user_id": user_id}
         clarifier_msg = f"This query will modify data. Do you want me to run it?\n\n{sql_query}"
         remember(session_id, "assistant", clarifier_msg)
         return jsonify({"clarifier": clarifier_msg, "history": get_history(session_id)}), 200
 
-    # Safe read query execution
     try:
         results_raw = execute_query(sql_query)
-        # results_raw may be either {columns, rows} or legacy list of dicts
-        if isinstance(results_raw, dict) and "rows" in results_raw:
-            cols = results_raw.get("columns")
-            rows = results_raw.get("rows")
+        if isinstance(results_raw, dict):
+            cols = results_raw.get("columns", [])
+            rows = results_raw.get("rows", [])
         else:
-            cols = None
+            cols = []
             rows = results_raw
 
-        # Persist the generated SQL as a human-readable assistant message
+        if cols and rows:
+            last_results_cache[session_id] = {"columns": cols, "rows": rows}
+            cache_ai_table(session_id, cols, rows)
+            chartable, chart_type = detect_chartable(cols, rows)
+            if chartable:
+                chart_prompt = "Do you want me to generate a chart for the above table?"
+                remember(session_id, "assistant", chart_prompt)
+
         remember(session_id, "assistant", f"Generated SQL:\n{sql_query}")
-        # Persist structured results so they can be restored as a table on reload
-        result_payload = {"type": "results", "sql": sql_query, "columns": cols, "rows": rows}
+        result_payload = {"type": "results",
+                          "sql": sql_query, "columns": cols, "rows": rows}
         remember(session_id, "assistant", result_payload)
 
-        return jsonify({"sql": sql_query, "results": rows, "columns": cols, "history": get_history(session_id)}), 200
+        return jsonify({
+            "sql": sql_query,
+            "results": rows,
+            "columns": cols,
+            "chartable": chartable if 'chartable' in locals() else False,
+            "chart_type": chart_type if 'chart_type' in locals() else None,
+            "history": get_history(session_id)
+        }), 200
     except Exception as e:
         friendly_error = rewrite_db_error(str(e), get_history(session_id))
         remember(session_id, "assistant", f"❌ {friendly_error}")
@@ -217,10 +361,11 @@ def ask():
         remember(session_id, "assistant", f"💡 You can try:\n{suggestions}")
         return jsonify({"error": friendly_error, "sql": sql_query, "suggestions": suggestions, "history": get_history(session_id)}), 500
 
-# -------------------- Confirm pending write --------------------
+# -------------------- Confirm & Cancel --------------------
 
 
 @app.route('/confirm', methods=['POST'])
+@jwt_required()
 def confirm_query():
     data = request.get_json(silent=True) or {}
     session_id = data.get('session_id') or data.get('sessionId') or 'default'
@@ -237,7 +382,6 @@ def confirm_query():
         pending_queries.pop(session_id, None)
         return jsonify({"message": "Query cancelled", "history": get_history(session_id)}), 200
 
-    # User confirmed yes
     sql = pending_queries[session_id]["sql"]
     try:
         results_raw = execute_query(sql)
@@ -248,9 +392,9 @@ def confirm_query():
             cols = None
             rows = results_raw
 
-        # Persist a human-readable confirmation and a structured results payload
         remember(session_id, "assistant", f"✅ Query executed.")
-        result_payload = {"type": "results", "sql": sql, "columns": cols, "rows": rows}
+        result_payload = {"type": "results",
+                          "sql": sql, "columns": cols, "rows": rows}
         remember(session_id, "assistant", result_payload)
 
         pending_queries.pop(session_id, None)
@@ -260,10 +404,9 @@ def confirm_query():
         remember(session_id, "assistant", f"❌ {friendly_error}")
         return jsonify({"error": friendly_error, "history": get_history(session_id)}), 500
 
-# -------------------- Cancel pending write --------------------
-
 
 @app.route('/cancel', methods=['POST'])
+@jwt_required()
 def cancel_query():
     data = request.get_json(silent=True) or {}
     session_id = data.get('session_id') or data.get('sessionId') or 'default'
@@ -275,12 +418,75 @@ def cancel_query():
     remember(session_id, "assistant", "❌ Query cancelled.")
     return jsonify({"message": "Query cancelled", "history": get_history(session_id)}), 200
 
-# -------------------- Chat HTTP helpers (frontend compatibility) --------------------
+# -------------------- Chart --------------------
+
+
+@app.route('/chart', methods=['POST'])
+@jwt_required()
+def generate_chart():
+    data = request.get_json(silent=True) or {}
+    session_id = data.get('session_id') or data.get('sessionId') or 'default'
+    chart_type = data.get('chartType') or data.get('chart_type')
+
+    if session_id not in last_results_cache:
+        return jsonify({"error": "No recent results found for this session"}), 400
+
+    results = last_results_cache[session_id]
+    cols, rows = results["columns"], results["rows"]
+
+    chartable, detected_chart_type = detect_chartable(cols, rows)
+    if not chartable:
+        return jsonify({"error": "Data not suitable for charting"}), 400
+
+    x_key = str(cols[0]).lower()
+    y_key = str(cols[1]).lower()
+    chart_config = {
+        "type": chart_type or detected_chart_type,
+        "x": x_key,
+        "y": y_key,
+        "data": [{x_key: r[0], y_key: r[1]} for r in rows[:50]]
+    }
+
+    try:
+        fig, ax = plt.subplots()
+        x_vals = [r[0] for r in rows[:50]]
+        y_vals = [r[1] for r in rows[:50]]
+        if chart_type == "bar" or detected_chart_type == "bar":
+            ax.bar(x_vals, y_vals)
+            ax.set_xlabel(cols[0])
+            ax.set_ylabel(cols[1])
+        elif chart_type == "line" or detected_chart_type == "line":
+            ax.plot(x_vals, y_vals, marker='o')
+            ax.set_xlabel(cols[0])
+            ax.set_ylabel(cols[1])
+        elif chart_type == "pie" or detected_chart_type == "pie":
+            ax.pie(y_vals, labels=x_vals, autopct='%1.1f%%')
+        else:
+            plt.close(fig)
+            return jsonify({"error": f"Chart type '{chart_type or detected_chart_type}' not supported for image rendering."}), 400
+
+        chart_title = (chart_type or detected_chart_type or "").capitalize()
+        ax.set_title(f"{chart_title} Chart")
+        buf = io.BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format='png')
+        plt.close(fig)
+        buf.seek(0)
+        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+    except Exception as e:
+        return jsonify({"error": f"Chart rendering failed: {str(e)}"}), 500
+
+    return jsonify({
+        "chart": chart_config,
+        "chart_image_base64": img_base64
+    }), 200
+
+# -------------------- Chat Helpers --------------------
 
 
 @app.route('/chat/<session_id>', methods=['GET'])
+@jwt_required()
 def get_chat(session_id):
-    """Return chat history for a session (used by frontend GET /chat/:session_id)."""
     try:
         history = get_history(session_id)
         return jsonify({"history": history}), 200
@@ -289,11 +495,8 @@ def get_chat(session_id):
 
 
 @app.route('/chat', methods=['PUT'])
+@jwt_required()
 def save_chat_message():
-    """Persist a single chat message from the frontend.
-
-    Accepts both `session_id` and `sessionId` to be robust.
-    """
     data = request.get_json(silent=True) or {}
     session_id = data.get('session_id') or data.get('sessionId') or 'default'
     message_id = data.get('message_id') or data.get('messageId')
@@ -309,10 +512,9 @@ def save_chat_message():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# -------------------- Clear chat (compatible with frontend) --------------------
-
 
 @app.route('/chat/clear', methods=['POST'])
+@jwt_required()
 def chat_clear():
     data = request.get_json(silent=True) or {}
     session_id = data.get('sessionId') or data.get('session_id') or 'default'
@@ -326,7 +528,39 @@ def chat_clear():
 def home():
     return jsonify({"status": "Flask backend running"}), 200
 
+# -------------------- Debug Routes --------------------
+
+
+@app.route('/debug/routes', methods=['GET'])
+def debug_routes():
+    """Debug endpoint to see all registered routes"""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            "endpoint": rule.endpoint,
+            "methods": list(rule.methods),
+            "rule": str(rule)
+        })
+    return jsonify({"routes": routes}), 200
+
+
+@app.route('/debug/headers', methods=['GET', 'POST'])
+def debug_headers():
+    """Debug endpoint to see request headers"""
+    return jsonify({
+        "method": request.method,
+        "headers": dict(request.headers),
+        "args": dict(request.args),
+        "json": request.get_json(silent=True),
+        "form": dict(request.form) if request.form else None
+    }), 200
+
 
 if __name__ == '__main__':
     import os
+    print("🚀 Starting Flask app...")
+    print("📋 Registered routes:")
+    for rule in app.url_map.iter_rules():
+        print(f"  {rule.endpoint}: {list(rule.methods)} {rule}")
+
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)

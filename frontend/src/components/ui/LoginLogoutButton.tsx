@@ -1,46 +1,34 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/utils/supabase/client";
-import { signout } from "@/lib/auth-actions";
-import type { User } from "@supabase/supabase-js";
+import { useAuth } from "@/context/AuthContext";
 
-const LoginButton = () => {
-  const [user, setUser] = useState<User | null>(null);
+const LoginLogoutButton = () => {
   const router = useRouter();
-  const supabase = createClient();
-  useEffect(() => {
-    const fetchUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUser(user);
-    };
-    fetchUser();
-  }, [supabase.auth]);
-  if (user) {
+  const { token, user, logout } = useAuth();
+
+  if (token && user) {
     return (
       <Button
         onClick={() => {
-          signout();
-          setUser(null);
+          logout();
+          router.push('/');
         }}
       >
         Log out
       </Button>
     );
   }
+
   return (
     <Button
       variant="outline"
-      onClick={() => {
-        router.push("/login");
-      }}
+      onClick={() => router.push('/login')}
     >
       Login
     </Button>
   );
 };
 
-export default LoginButton;
+export default LoginLogoutButton;

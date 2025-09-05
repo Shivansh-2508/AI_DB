@@ -542,4 +542,62 @@ button, [role="button"], input[type="submit"], input[type="button"] {
       min-height: 44px;
       min-width: 44px;
     }
+    
+    /* Better scrolling on mobile */
+    * {
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Prevent zoom on input focus */
+    input, textarea, select {
+      font-size: 16px;
+    }
+    
+    /* Mobile-friendly touch interactions */
+    .touch-target {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+  
+  /* Dark theme scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: rgba(55, 65, 81, 0.3);
+    border-radius: 3px;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: rgba(156, 163, 175, 0.5);
+    border-radius: 3px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(156, 163, 175, 0.7);
+  }
+  
+  /* Firefox scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(156, 163, 175, 0.5) rgba(55, 65, 81, 0.3);
+  }
+  
+  /* Message animations */
+  .message-enter {
+    animation: messageSlideIn 0.3s ease-out;
+  }
+  
+  @keyframes messageSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
