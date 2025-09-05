@@ -113,7 +113,7 @@ export default function ChatInput({
                       ${awaitingConfirmation ? 'focus:ring-amber-500/30 focus:border-amber-500/30 text-amber-200 placeholder-amber-200/70' : ''}`}
                   />
                   {/* Keyboard shortcut hint */}
-                  <div className="hidden sm:block absolute right-3 bottom-3 pointer-events-none">
+                  <div className="hidden sm:block absolute right-3 bottom-5 pointer-events-none">
                     <kbd className="text-xs px-1.5 py-0.5 rounded bg-gray-800/50 text-gray-500 ring-1 ring-gray-700/50">
                       ⌘ + ↵
                     </kbd>

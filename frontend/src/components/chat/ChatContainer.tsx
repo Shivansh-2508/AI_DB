@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, createContext, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { Database, AlertTriangle, Bot, User } from "lucide-react";
+import { Database } from "lucide-react";
 import ChatInput from "./ChatInput";
 import MessageList, { Message } from "./MessageList";
 
@@ -68,7 +68,7 @@ export default function ChatContainer() {
   const { user, token, logout } = useAuth();
   const userEmail = user?.email || null;
   const [loading, setLoading] = useState(false);
-  const [clearing, setClearing] = useState(false);
+  // ...existing code...
   const [sessionState, setSessionState] = useState<SessionState>({
     isActive: true,
     lastActivity: new Date(),
@@ -125,7 +125,7 @@ export default function ChatContainer() {
 
   // Phase 3: Clear chat history
   const clearChatHistory = useCallback(async () => {
-    setClearing(true);
+  // ...existing code...
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/clear`, {
         method: "POST",
@@ -190,7 +190,7 @@ export default function ChatContainer() {
         ...prev
       ]);
     } finally {
-      setClearing(false);
+  // ...existing code...
     }
   }, [sessionId, generateMessageId, authHeaders]);
 

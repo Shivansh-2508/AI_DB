@@ -3,23 +3,21 @@ import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import ChatContainer from "@/components/chat/NewChatContainer";
 import { useAuth } from "@/context/AuthContext";
-import { Button } from "@/components/ui/button";
+// ...existing code...
 import { Database } from "lucide-react";
+
 
 export default function ChatPage() {
   const router = useRouter();
-  const { token, logout } = useAuth();
-  const [loading, setLoading] = useState(true);
+  const { token, isLoading } = useAuth();
 
   useEffect(() => {
-    if (!token) {
+    if (!isLoading && !token) {
       router.replace('/login');
-    } else {
-      setLoading(false);
     }
-  }, [token, router]);
+  }, [token, isLoading, router]);
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-[#0A0F16] flex items-center justify-center">
         <div className="text-center">

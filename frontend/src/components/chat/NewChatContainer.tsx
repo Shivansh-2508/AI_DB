@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, createContext, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { Database, AlertTriangle, Bot, User } from "lucide-react";
+import { Database, AlertTriangle } from "lucide-react";
 import ChatInput from "./ChatInput";
 import MessageList, { Message } from "./MessageList";
 

@@ -113,7 +113,7 @@ export default function ChartRenderer({ config }: { config: ChartConfig }) {
           {type !== 'bar' && type !== 'line' && (
             <div className="flex items-center justify-center h-full">
               <div className="text-amber-400/90 text-sm font-medium">
-                Chart type '{type}' not supported.
+                Chart type &apos;{type}&apos; not supported.
               </div>
             </div>
           )}
