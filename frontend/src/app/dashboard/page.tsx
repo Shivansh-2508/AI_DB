@@ -79,7 +79,7 @@ export default function Dashboard() {
     
     try {
       // Updated URL to match backend routes
-      const response = await fetch("http://localhost:5000/api/auth/protected", {
+  const response = await fetch((process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:5000") + "/api/auth/protected", {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -109,11 +109,12 @@ export default function Dashboard() {
   const testEndpointAvailability = async () => {
     console.log("🌐 Testing endpoint availability...");
     
+    const base = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:5000";
     const endpoints = [
-      "http://localhost:5000/",
-      "http://localhost:5000/api/auth/signup",
-      "http://localhost:5000/api/auth/login",
-      "http://localhost:5000/api/auth/protected",
+      `${base}/`,
+      `${base}/api/auth/signup`,
+      `${base}/api/auth/login`,
+      `${base}/api/auth/protected`,
     ];
 
     for (const endpoint of endpoints) {

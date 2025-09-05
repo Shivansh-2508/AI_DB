@@ -36,7 +36,7 @@ from nlp_to_sql import (
 
 app = Flask(__name__)
 CORS(app, resources={
-     r"/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
+    r"/*": {"origins": ["http://localhost:3000", "https://ai-db-one.vercel.app/"]}}, supports_credentials=True)
 
 bcrypt = Bcrypt(app)
 
