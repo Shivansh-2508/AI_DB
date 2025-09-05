@@ -69,6 +69,7 @@ export default function ChatContainer() {
   const userEmail = user?.email || null;
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [isSchemaLoading, setIsSchemaLoading] = useState(true);
   const [sessionState, setSessionState] = useState<SessionState>({
     isActive: true,
     lastActivity: new Date(),
@@ -458,6 +459,7 @@ export default function ChatContainer() {
     if (!userEmail) return;
 
     async function prefetchSchema() {
+      setIsSchemaLoading(true);
       try {
         const res = await fetch(
           `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat`,
@@ -474,25 +476,52 @@ export default function ChatContainer() {
         const data = await res.json();
         if (res.status === 401) {
           logout();
+          setIsSchemaLoading(false);
           return;
         }
         if (res.ok) {
           console.log("Schema cached:", data.schema_summary);
-          addMessageWithActivity({
-            text: "✅ Database schema cached and ready for queries.",
-            type: "system"
+          // Only add schema cached and quick tips messages if not already present
+          setMessages(prevMsgs => {
+            const hasSchemaMsg = prevMsgs.some(m => m.text && m.text.includes("Database schema cached and ready for queries"));
+            const hasTipsMsg = prevMsgs.some(m => m.text && m.text.includes("Quick tips"));
+            let newMsgs = [...prevMsgs];
+            if (!hasSchemaMsg) {
+              newMsgs = [
+                {
+                  id: `schema-cached-${Date.now()}`,
+                  text: "✅ Database schema cached and ready for queries.",
+                  isUser: false,
+                  isError: false,
+                  timestamp: new Date(),
+                  type: "system"
+                },
+                ...newMsgs
+              ];
+            }
+            if (!hasTipsMsg) {
+              newMsgs = [
+                {
+                  id: `quick-tips-${Date.now()}`,
+                  text: `💡 **Quick tips:**\n• Try: \"show me the customers table\"\n• Ask: \"what tables are available?\"\n• Query: \"find orders from last week\"\n\n*Session ID: \`${sessionId}\`*`,
+                  isUser: false,
+                  isError: false,
+                  timestamp: new Date(),
+                  type: "system"
+                },
+                ...newMsgs
+              ];
+            }
+            return newMsgs;
           });
-          
-          addMessageWithActivity({
-            text: `💡 **Quick tips:**\n• Try: "show me the customers table"\n• Ask: "what tables are available?"\n• Query: "find orders from last week"\n\n*Session ID: \`${sessionId}\`*`,
-            type: "system"
-          });
+          setIsSchemaLoading(false);
         } else {
           console.error("Schema prefetch failed:", data.error);
           addMessageWithActivity({
             text: "⚠️ Failed to prefetch schema. Queries may not work correctly.",
             type: "error"
           });
+          setIsSchemaLoading(true); // keep loading true if schema is not available
         }
       } catch {
         console.error("Prefetch error");
@@ -500,6 +529,7 @@ export default function ChatContainer() {
           text: "⚠️ Schema prefetch request failed.",
           type: "error"
         });
+        setIsSchemaLoading(true); // keep loading true if schema is not available
       }
     }
 
@@ -510,6 +540,13 @@ export default function ChatContainer() {
     if (!sessionState.isActive) {
       addMessageWithActivity({
         text: "Session expired. Please refresh the page to start a new session.",
+        type: "error"
+      });
+      return;
+    }
+    if (isSchemaLoading) {
+      addMessageWithActivity({
+        text: "⏳ Please wait until the database schema is loaded before chatting.",
         type: "error"
       });
       return;
@@ -725,7 +762,7 @@ export default function ChatContainer() {
 
       {/* Input Area with minimal styling */}
       <div className="flex-shrink-0 border-t border-gray-800/30 bg-[#0A0F16]">
-        <div className="max-w-3xl mx-auto px-4 py-4">
+  <div className="max-w-4xl mx-auto px-4 py-4">
           <ChatInput 
             onSend={handleUserInput} 
             disabled={loading}

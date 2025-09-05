@@ -320,7 +320,7 @@ def ask():
 
     schema = get_cached_schema(user_id)
     if not schema:
-        schema = cache_user_schema(user_id)
+        return jsonify({"error": "Schema not cached. Please refresh or re-login to cache your schema before chatting."}), 400
 
     remember(session_id, "user", user_input)
     history = get_history(session_id)

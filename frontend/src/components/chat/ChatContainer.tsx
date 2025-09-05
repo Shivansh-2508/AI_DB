@@ -518,6 +518,13 @@ export default function ChatContainer() {
       });
       return;
     }
+    if (isSchemaLoading) {
+      addMessageWithActivity({
+        text: "⏳ Please wait until the database schema is loaded before chatting.",
+        type: "error"
+      });
+      return;
+    }
 
     addMessageWithActivity({ text, type: "user" });
     setSessionState(prev => ({ ...prev, messageCount: prev.messageCount + 1 }));
@@ -643,7 +650,7 @@ export default function ChatContainer() {
         </div>
 
         {/* Messages Area with gradient background */}
-        <div className="flex-1 min-h-0 bg-gradient-to-b from-[#0F1A1C] to-[#0A1112] overflow-hidden">
+        <div className="flex-1 min-h-[600px] bg-gradient-to-b from-[#0F1A1C] to-[#0A1112] overflow-hidden">
           <div className="h-full relative">
             <SessionContext.Provider value={sessionId}>
               <div className="absolute inset-0">
@@ -655,7 +662,7 @@ export default function ChatContainer() {
 
         {/* Input Area - Fixed at bottom with blur effect */}
         <div className="flex-shrink-0 border-t border-gray-800/40 bg-[#0F1A1C]/80 backdrop-blur-xl">
-          <div className="max-w-4xl mx-auto px-4 py-4">
+    <div className="max-w-6xl mx-auto px-4 py-6">
             <ChatInput
               onSend={handleUserInput}
               disabled={loading || isSchemaLoading}

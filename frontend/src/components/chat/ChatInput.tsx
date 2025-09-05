@@ -43,7 +43,7 @@ export default function ChatInput({
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 300)}px`;
     }
   }, [value]);
 
@@ -63,7 +63,7 @@ export default function ChatInput({
         {/* Confirmation banner - Minimal */}
         {awaitingConfirmation && (
           <div className="border-b border-gray-800/30 bg-amber-500/5">
-            <div className="max-w-4xl mx-auto px-4 py-2">
+            <div className="max-w-6xl mx-auto px-4 py-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-amber-400" />
@@ -90,8 +90,8 @@ export default function ChatInput({
           </div>
         )}
 
-        <div className="max-w-4xl mx-auto">
-          <form onSubmit={handleSubmit} className="relative px-4 py-4">
+  <div className="max-w-6xl mx-auto">
+          <form onSubmit={handleSubmit} className="relative px-4 py-6">
             <div className="flex items-end gap-2">
               <div className="flex-1 relative">
                 <div className="relative">
@@ -103,7 +103,7 @@ export default function ChatInput({
                     placeholder={getPlaceholder()}
                     disabled={disabled || !sessionActive}
                     rows={1}
-                    className={`w-full resize-none bg-gray-800/50 text-gray-100 rounded px-3 py-2 text-sm placeholder-gray-500
+                    className={`w-full resize-none bg-gray-800/50 text-gray-100 rounded px-4 py-3 text-sm placeholder-gray-500
                       ring-1 ring-gray-700/30 focus:outline-none focus:ring-1 focus:ring-gray-600
                       transition-colors
                       ${disabled || !sessionActive ? 'cursor-not-allowed opacity-50' : ''}
