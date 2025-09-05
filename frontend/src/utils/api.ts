@@ -1,11 +1,11 @@
 // utils/api.ts
-export async function postData<T>(url: string, data: any): Promise<T> {
+export async function postData<T>(url: string, data: unknown): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(data),
+    body: typeof data === 'string' ? data : JSON.stringify(data),
   });
   if (!res.ok) {
     const error = await res.json();

@@ -38,9 +38,13 @@ export default function LoginPage() {
         router.push("/dashboard");
       }, 1000);
       
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Login failed:", err);
-      setMessage(`Login error: ${err.message}`);
+      if (err instanceof Error) {
+        setMessage(`Login error: ${err.message}`);
+      } else {
+        setMessage("Login error: Unknown error");
+      }
     } finally {
       setIsLoading(false);
     }

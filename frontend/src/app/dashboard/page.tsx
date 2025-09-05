@@ -1,16 +1,17 @@
 // app/dashboard/page.tsx
 "use client";
 
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import api from "@/lib/api";
+import api, { ProtectedResponse } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 
 export default function Dashboard() {
-  const [me, setMe] = useState(null);
+  const [me, setMe] = useState<ProtectedResponse | null>(null);
   const [err, setErr] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [testResults, setTestResults] = useState(null);
+  const [testResults, setTestResults] = useState<string | object | null>(null);
   const { token, user, logout, isLoading: authLoading } = useAuth();
   const router = useRouter();
 
@@ -46,7 +47,7 @@ export default function Dashboard() {
       .finally(() => {
         setIsLoading(false);
       });
-  }, [token, authLoading]);
+  }, [token, authLoading, router]);
 
   const handleLogout = () => {
     logout();
@@ -63,7 +64,11 @@ export default function Dashboard() {
       const result = await api.testProtectedWithDifferentHeaders(token);
       setTestResults(result);
     } catch (error) {
-      setTestResults({ error: error.message });
+      if (error instanceof Error) {
+        setTestResults({ error: error.message });
+      } else {
+        setTestResults({ error: String(error) });
+      }
     }
   };
 
@@ -134,7 +139,11 @@ export default function Dashboard() {
           console.log(`${endpoint} (with auth) - Status: ${authResponse.status}`);
         }
       } catch (error) {
-        console.log(`${endpoint} - Error: ${error.message}`);
+        if (error instanceof Error) {
+          console.log(`${endpoint} - Error: ${error.message}`);
+        } else {
+          console.log(`${endpoint} - Error: ${String(error)}`);
+        }
       }
     }
   };

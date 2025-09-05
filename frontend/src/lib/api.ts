@@ -6,7 +6,7 @@ interface LoginResponse {
   user: {
     id: string;
     email: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -18,11 +18,11 @@ interface SignupResponse {
   };
 }
 
-interface ProtectedResponse {
+export interface ProtectedResponse {
   user: {
     id: string;
     email: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   message?: string;
 }
@@ -170,10 +170,12 @@ async function testProtectedWithDifferentHeaders(accessToken: string) {
       
       const res = await fetch(`${BASE_URL}/api/auth/protected`, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          ...testCase.headers,
-        },
+        headers: Object.fromEntries(
+          Object.entries({
+            "Content-Type": "application/json",
+            ...testCase.headers,
+          }).filter((entry) => entry[1] !== undefined)
+        ),
       });
 
       console.log(`📊 ${testCase.name} - Status: ${res.status}`);

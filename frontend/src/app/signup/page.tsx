@@ -13,10 +13,14 @@ export default function SignUpPage() {
     setMessage("");
 
     try {
-      const res = await api.signup(email, password);
+      await api.signup(email, password);
       setMessage("Signup successful! You can now log in.");
-    } catch (err: any) {
-      setMessage(`Signup error: ${err.message}`);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setMessage(`Signup error: ${err.message}`);
+      } else {
+        setMessage("Signup error: Unknown error");
+      }
     }
   };
 
