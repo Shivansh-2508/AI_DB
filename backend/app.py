@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Blueprint
 from flask_cors import CORS
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import (
@@ -38,9 +38,12 @@ app.config["JWT_SECRET_KEY"] = "super-secret-key"  # TODO: set via env var
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = datetime.timedelta(hours=1)
 jwt = JWTManager(app)
 
-# -------------------- Auth --------------------
+# Create API Blueprint
+api_bp = Blueprint('api', __name__, url_prefix='/api')
 
-@app.route('/api/auth/signup', methods=['POST'])
+# -------------------- Auth Routes (in blueprint) --------------------
+
+@api_bp.route('/auth/signup', methods=['POST'])
 def signup():
     data = request.get_json(silent=True) or {}
     email = data.get('email')
@@ -53,7 +56,6 @@ def signup():
     if existing and len(existing.get("rows", [])) > 0:
          return jsonify({"error": "Email already in use"}), 400
 
-
     hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
     execute_query(
         "INSERT INTO users (email, hashed_pw, role) VALUES (%s, %s, %s)",
@@ -62,40 +64,102 @@ def signup():
 
     return jsonify({"message": "Signup successful"}), 201
 
-
-@app.route('/api/auth/login', methods=['POST'])
+@api_bp.route('/auth/login', methods=['POST'])
 def login():
-    data = request.get_json() or {}
-    email = data.get('email')
-    password = data.get('password')
+    try:
+        data = request.get_json() or {}
+        email = data.get('email')
+        password = data.get('password')
 
-    if not email or not password:
-        return jsonify({"error": "email and password required"}), 400
+        print(f"Login attempt for email: {email}")  # Debug log
 
-    user = execute_query(
-        "SELECT user_id, hashed_pw, role FROM users WHERE email = %s", 
-        (email,)
-    )
+        if not email or not password:
+            print("Missing email or password")
+            return jsonify({"error": "email and password required"}), 400
 
-    if not user or len(user) == 0:
-        return jsonify({"error": "Invalid credentials"}), 401
+        user = execute_query(
+            "SELECT user_id, hashed_pw, role FROM users WHERE email = %s", 
+            (email,)
+        )
 
-    user_id = user[0]["user_id"]
-    hashed_pw = user[0]["hashed_pw"]
-    role = user[0]["role"]
+        if not user or len(user) == 0:
+            print(f"User not found: {email}")
+            return jsonify({"error": "Invalid credentials"}), 401
 
-    if not bcrypt.check_password_hash(hashed_pw, password):
-        return jsonify({"error": "Invalid credentials"}), 401
+        user_id = user[0]["user_id"]
+        hashed_pw = user[0]["hashed_pw"]
+        role = user[0]["role"]
 
-    access_token = create_access_token(identity={"user_id": user_id, "email": email, "role": role})
-    return jsonify({"access_token": access_token, "user": {"user_id": user_id, "email": email, "role": role}}), 200
+        if not bcrypt.check_password_hash(hashed_pw, password):
+            print(f"Password check failed for: {email}")
+            return jsonify({"error": "Invalid credentials"}), 401
 
+        # Create token with consistent field names
+        token_payload = {
+            "user_id": user_id,  # Keep as user_id for backend consistency
+            "email": email, 
+            "role": role
+        }
+        
+        access_token = create_access_token(identity=token_payload)
+        
+        # Return user data with 'id' field for frontend consistency
+        user_data = {
+            "id": user_id,      # Frontend expects 'id'
+            "user_id": user_id, # Keep both for compatibility
+            "email": email, 
+            "role": role
+        }
+        
+        print(f"Login successful for: {email}, token created")
+        return jsonify({
+            "access_token": access_token, 
+            "user": user_data
+        }), 200
+        
+    except Exception as e:
+        print(f"Login error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
-@app.route('/api/auth/protected', methods=['GET'])
+@api_bp.route('/auth/protected', methods=['GET'])
 @jwt_required()
 def protected():
-    current_user = get_jwt_identity()
-    return jsonify({"message": "Protected route accessed", "user": current_user}), 200
+    try:
+        current_user = get_jwt_identity()
+        print(f"Protected route accessed by: {current_user}")  # Debug log
+        
+        # Ensure consistent response format
+        response_data = {
+            "message": "Protected route accessed successfully",
+            "user": {
+                "id": current_user.get("user_id"),  # Map user_id to id
+                "user_id": current_user.get("user_id"),
+                "email": current_user.get("email"),
+                "role": current_user.get("role")
+            }
+        }
+        
+        return jsonify(response_data), 200
+        
+    except Exception as e:
+        print(f"Protected route error: {str(e)}")
+        return jsonify({"error": "Failed to access protected route"}), 500
+
+@api_bp.route('/auth/debug-token', methods=['GET'])
+@jwt_required()
+def debug_token():
+    try:
+        current_user = get_jwt_identity()
+        return jsonify({
+            "message": "Token debug info",
+            "token_payload": current_user,
+            "token_type": type(current_user).__name__
+        }), 200
+    except Exception as e:
+        return jsonify({"error": f"Debug error: {str(e)}"}), 500
+
+# Register the blueprint
+app.register_blueprint(api_bp)
 
 # -------------------- In-memory chat history (MVP) --------------------
 
@@ -287,7 +351,6 @@ def confirm_query():
         remember(session_id, "assistant", f"❌ {friendly_error}")
         return jsonify({"error": friendly_error, "history": get_history(session_id)}), 500
 
-
 @app.route('/cancel', methods=['POST'])
 def cancel_query():
     data = request.get_json(silent=True) or {}
@@ -371,7 +434,6 @@ def get_chat(session_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @app.route('/chat', methods=['PUT'])
 def save_chat_message():
     data = request.get_json(silent=True) or {}
@@ -389,7 +451,6 @@ def save_chat_message():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @app.route('/chat/clear', methods=['POST'])
 def chat_clear():
     data = request.get_json(silent=True) or {}
@@ -403,6 +464,36 @@ def chat_clear():
 def home():
     return jsonify({"status": "Flask backend running"}), 200
 
+# -------------------- Debug Routes --------------------
+
+@app.route('/debug/routes', methods=['GET'])
+def debug_routes():
+    """Debug endpoint to see all registered routes"""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            "endpoint": rule.endpoint,
+            "methods": list(rule.methods),
+            "rule": str(rule)
+        })
+    return jsonify({"routes": routes}), 200
+
+@app.route('/debug/headers', methods=['GET', 'POST'])
+def debug_headers():
+    """Debug endpoint to see request headers"""
+    return jsonify({
+        "method": request.method,
+        "headers": dict(request.headers),
+        "args": dict(request.args),
+        "json": request.get_json(silent=True),
+        "form": dict(request.form) if request.form else None
+    }), 200
+
 if __name__ == '__main__':
     import os
+    print("🚀 Starting Flask app...")
+    print("📋 Registered routes:")
+    for rule in app.url_map.iter_rules():
+        print(f"  {rule.endpoint}: {list(rule.methods)} {rule}")
+    
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
