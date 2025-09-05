@@ -1,3 +1,4 @@
+import traceback
 from flask import Flask, request, jsonify, Blueprint
 from flask_cors import CORS
 from flask_bcrypt import Bcrypt
@@ -34,7 +35,8 @@ from nlp_to_sql import (
 
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
+CORS(app, resources={
+     r"/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
 
 bcrypt = Bcrypt(app)
 
@@ -43,38 +45,46 @@ app.config["JWT_ACCESS_TOKEN_EXPIRES"] = datetime.timedelta(hours=1)
 jwt = JWTManager(app)
 
 # --- JWT and General Error Handlers for Debugging ---
-import traceback
+
 
 @app.errorhandler(jwt_exceptions.NoAuthorizationError)
 def handle_no_auth_error(e):
     print("[JWT ERROR] NoAuthorizationError:", str(e))
-    print("[JWT ERROR] Authorization header:", request.headers.get("Authorization"))
+    print("[JWT ERROR] Authorization header:",
+          request.headers.get("Authorization"))
     return jsonify({"error": "No valid JWT provided", "details": str(e)}), 422
+
 
 @app.errorhandler(jwt_exceptions.JWTDecodeError)
 def handle_jwt_decode_error(e):
     print("[JWT ERROR] JWTDecodeError:", str(e))
-    print("[JWT ERROR] Authorization header:", request.headers.get("Authorization"))
+    print("[JWT ERROR] Authorization header:",
+          request.headers.get("Authorization"))
     return jsonify({"error": "JWT decode error", "details": str(e)}), 422
 
 
 @app.errorhandler(ExpiredSignatureError)
 def handle_jwt_expired_error(e):
     print("[JWT ERROR] ExpiredSignatureError:", str(e))
-    print("[JWT ERROR] Authorization header:", request.headers.get("Authorization"))
+    print("[JWT ERROR] Authorization header:",
+          request.headers.get("Authorization"))
     return jsonify({"error": "JWT expired", "details": str(e)}), 422
+
 
 @app.errorhandler(Exception)
 def handle_general_error(e):
     print("[GENERAL ERROR]", str(e))
-    print("[GENERAL ERROR] Authorization header:", request.headers.get("Authorization"))
+    print("[GENERAL ERROR] Authorization header:",
+          request.headers.get("Authorization"))
     traceback.print_exc()
     return jsonify({"error": str(e)}), 500
+
 
 # Create API Blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 # -------------------- Auth Routes (in blueprint) --------------------
+
 
 @api_bp.route('/auth/signup', methods=['POST'])
 def signup():
@@ -85,9 +95,10 @@ def signup():
     if not email or not password:
         return jsonify({"error": "email and password required"}), 400
 
-    existing = execute_query("SELECT user_id FROM users WHERE email = %s", (email,))
+    existing = execute_query(
+        "SELECT user_id FROM users WHERE email = %s", (email,))
     if existing and len(existing.get("rows", [])) > 0:
-         return jsonify({"error": "Email already in use"}), 400
+        return jsonify({"error": "Email already in use"}), 400
 
     hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
     execute_query(
@@ -96,6 +107,7 @@ def signup():
     )
 
     return jsonify({"message": "Signup successful"}), 201
+
 
 @api_bp.route('/auth/login', methods=['POST'])
 def login():
@@ -111,7 +123,7 @@ def login():
             return jsonify({"error": "email and password required"}), 400
 
         user = execute_query(
-            "SELECT user_id, hashed_pw, role FROM users WHERE email = %s", 
+            "SELECT user_id, hashed_pw, role FROM users WHERE email = %s",
             (email,)
         )
 
@@ -141,26 +153,29 @@ def login():
             "access_token": access_token,
             "user": user_data
         }), 200
-        
+
     except Exception as e:
         print(f"Login error: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
+
 
 @api_bp.route('/auth/protected', methods=['GET'])
 @jwt_required()
 def protected():
     try:
         current_user_id = get_jwt_identity()
-        print(f"Protected route accessed by user_id: {current_user_id}")  # Debug log
+        # Debug log
+        print(f"Protected route accessed by user_id: {current_user_id}")
         response_data = {
             "message": "Protected route accessed successfully",
             "user_id": current_user_id
         }
         return jsonify(response_data), 200
-        
+
     except Exception as e:
         print(f"Protected route error: {str(e)}")
         return jsonify({"error": "Failed to access protected route"}), 500
+
 
 @api_bp.route('/auth/debug-token', methods=['GET'])
 @jwt_required()
@@ -175,6 +190,7 @@ def debug_token():
     except Exception as e:
         return jsonify({"error": f"Debug error: {str(e)}"}), 500
 
+
 # Register the blueprint
 app.register_blueprint(api_bp)
 
@@ -184,19 +200,24 @@ chat_history = {}
 last_results_cache = {}
 pending_queries = {}
 
+
 def remember(session_id: str, role: str, content: object, message_id: str | None = None) -> None:
     try:
         save_message(session_id, message_id, content, role)
     except Exception:
-        chat_history.setdefault(session_id, []).append({"role": role, "content": content})
+        chat_history.setdefault(session_id, []).append(
+            {"role": role, "content": content})
+
 
 def normalize_history(raw_history):
     normalized = []
     for entry in (raw_history or []):
         if isinstance(entry, dict):
             role = entry.get('role') or entry.get('type') or 'assistant'
-            content = entry.get('content') or entry.get('text') or entry.get('message') or ''
-            message_id = entry.get('message_id') or entry.get('messageId') or entry.get('id')
+            content = entry.get('content') or entry.get(
+                'text') or entry.get('message') or ''
+            message_id = entry.get('message_id') or entry.get(
+                'messageId') or entry.get('id')
             timestamp = entry.get('timestamp') or entry.get('time')
             normalized.append({
                 'role': role,
@@ -205,8 +226,10 @@ def normalize_history(raw_history):
                 'timestamp': timestamp,
             })
         else:
-            normalized.append({'role': 'assistant', 'content': str(entry), 'message_id': None, 'timestamp': None})
+            normalized.append({'role': 'assistant', 'content': str(
+                entry), 'message_id': None, 'timestamp': None})
     return normalized
+
 
 def get_history(session_id: str):
     try:
@@ -215,25 +238,32 @@ def get_history(session_id: str):
     except Exception:
         return normalize_history(chat_history.get(session_id, []))
 
+
 def clear_history(session_id: str) -> None:
     try:
         clear_chat_session(session_id)
     except Exception:
         chat_history.pop(session_id, None)
 
+
 def cache_user_schema(user_id, schema_name="public"):
     return cache_schema_for_user(user_id, schema_name)
 
 # -------------------- Chat Routes --------------------
 
+
 @app.route('/chat', methods=['POST', 'PUT'])
+@jwt_required()
 def chat_handler():
     data = request.get_json(silent=True) or {}
 
-    user_id = data.get('email') or data.get('user_id')
+    # Always trust JWT for user identity
+    jwt_user_id = get_jwt_identity()
+    user_id = jwt_user_id
     session_id = data.get('sessionId') or data.get('session_id') or 'default'
 
-    message_id = data.get('messageId') or data.get('message_id') or data.get('id')
+    message_id = data.get('messageId') or data.get(
+        'message_id') or data.get('id')
     content = data.get('content') or data.get('text') or data.get('message')
     role = (data.get('role') or data.get('type') or 'assistant')
 
@@ -261,12 +291,14 @@ def chat_handler():
 
 # -------------------- Ask (NL → SQL) --------------------
 
+
 @app.route('/ask', methods=['POST'])
+@jwt_required()
 def ask():
     data = request.get_json(silent=True) or {}
     user_input = data.get('message', '').strip()
     session_id = data.get('session_id') or data.get('sessionId') or 'default'
-    user_id = data.get('email')
+    user_id = get_jwt_identity()
 
     if not user_input:
         return jsonify({"error": "Message is required."}), 400
@@ -310,7 +342,8 @@ def ask():
                 remember(session_id, "assistant", chart_prompt)
 
         remember(session_id, "assistant", f"Generated SQL:\n{sql_query}")
-        result_payload = {"type": "results", "sql": sql_query, "columns": cols, "rows": rows}
+        result_payload = {"type": "results",
+                          "sql": sql_query, "columns": cols, "rows": rows}
         remember(session_id, "assistant", result_payload)
 
         return jsonify({
@@ -330,7 +363,9 @@ def ask():
 
 # -------------------- Confirm & Cancel --------------------
 
+
 @app.route('/confirm', methods=['POST'])
+@jwt_required()
 def confirm_query():
     data = request.get_json(silent=True) or {}
     session_id = data.get('session_id') or data.get('sessionId') or 'default'
@@ -358,7 +393,8 @@ def confirm_query():
             rows = results_raw
 
         remember(session_id, "assistant", f"✅ Query executed.")
-        result_payload = {"type": "results", "sql": sql, "columns": cols, "rows": rows}
+        result_payload = {"type": "results",
+                          "sql": sql, "columns": cols, "rows": rows}
         remember(session_id, "assistant", result_payload)
 
         pending_queries.pop(session_id, None)
@@ -368,7 +404,9 @@ def confirm_query():
         remember(session_id, "assistant", f"❌ {friendly_error}")
         return jsonify({"error": friendly_error, "history": get_history(session_id)}), 500
 
+
 @app.route('/cancel', methods=['POST'])
+@jwt_required()
 def cancel_query():
     data = request.get_json(silent=True) or {}
     session_id = data.get('session_id') or data.get('sessionId') or 'default'
@@ -382,7 +420,9 @@ def cancel_query():
 
 # -------------------- Chart --------------------
 
+
 @app.route('/chart', methods=['POST'])
+@jwt_required()
 def generate_chart():
     data = request.get_json(silent=True) or {}
     session_id = data.get('session_id') or data.get('sessionId') or 'default'
@@ -443,7 +483,9 @@ def generate_chart():
 
 # -------------------- Chat Helpers --------------------
 
+
 @app.route('/chat/<session_id>', methods=['GET'])
+@jwt_required()
 def get_chat(session_id):
     try:
         history = get_history(session_id)
@@ -451,7 +493,9 @@ def get_chat(session_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 @app.route('/chat', methods=['PUT'])
+@jwt_required()
 def save_chat_message():
     data = request.get_json(silent=True) or {}
     session_id = data.get('session_id') or data.get('sessionId') or 'default'
@@ -468,7 +512,9 @@ def save_chat_message():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 @app.route('/chat/clear', methods=['POST'])
+@jwt_required()
 def chat_clear():
     data = request.get_json(silent=True) or {}
     session_id = data.get('sessionId') or data.get('session_id') or 'default'
@@ -477,11 +523,13 @@ def chat_clear():
 
 # -------------------- Health --------------------
 
+
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({"status": "Flask backend running"}), 200
 
 # -------------------- Debug Routes --------------------
+
 
 @app.route('/debug/routes', methods=['GET'])
 def debug_routes():
@@ -495,6 +543,7 @@ def debug_routes():
         })
     return jsonify({"routes": routes}), 200
 
+
 @app.route('/debug/headers', methods=['GET', 'POST'])
 def debug_headers():
     """Debug endpoint to see request headers"""
@@ -506,11 +555,12 @@ def debug_headers():
         "form": dict(request.form) if request.form else None
     }), 200
 
+
 if __name__ == '__main__':
     import os
     print("🚀 Starting Flask app...")
     print("📋 Registered routes:")
     for rule in app.url_map.iter_rules():
         print(f"  {rule.endpoint}: {list(rule.methods)} {rule}")
-    
+
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)

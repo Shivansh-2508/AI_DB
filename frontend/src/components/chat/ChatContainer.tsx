@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback, createContext } from "react";
+import { useState, useEffect, useRef, useCallback, createContext, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Database, AlertTriangle } from "lucide-react";
 import ChatInput from "./ChatInput";
@@ -65,7 +65,7 @@ export const SessionContext = createContext<string | null>(null);
 
 export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const { user } = useAuth();
+  const { user, token, logout } = useAuth();
   const userEmail = user?.email || null;
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -75,7 +75,9 @@ export default function ChatContainer() {
     messageCount: 0,
     awaitingConfirmation: false
   });
-  const { logout } = useAuth();
+  const authHeaders = useMemo<Record<string,string>>(() => {
+    return token ? { Authorization: `Bearer ${token}` } : {} as Record<string,string>;
+  }, [token]);
   
   // Phase 3: Persistent session ID with cleanup
   const [sessionId] = useState(() => {
@@ -125,9 +127,9 @@ export default function ChatContainer() {
   const clearChatHistory = useCallback(async () => {
     setClearing(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/clear`, {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/clear`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ session_id: sessionId }),
       });
 
@@ -218,9 +220,9 @@ export default function ChatContainer() {
     });
 
     // Persist to backend
-    fetch(`${process.env.NEXT_PUBLIC_API_BASE}/chat`, {
+  fetch(`${process.env.NEXT_PUBLIC_API_BASE}/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify({
         email: userEmail,
         sessionId: sessionId,
@@ -232,7 +234,7 @@ export default function ChatContainer() {
   sql: msg.sql ?? undefined
       })
     }).catch(err => console.error("Failed to save message to backend", err));
-}, [generateMessageId, sessionId, userEmail]);
+}, [generateMessageId, sessionId, userEmail, authHeaders]);
 
   const updateActivity = useCallback(() => {
     // Only set isActive to true if not currently inactive
@@ -274,9 +276,9 @@ export default function ChatContainer() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/confirm`, {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/confirm`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
           session_id: sessionId,
           decision: decision
@@ -339,8 +341,12 @@ export default function ChatContainer() {
 
     async function loadHistory() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/${sessionId}`);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/${sessionId}`, { headers: { ...authHeaders } });
         const data = await res.json();
+        if (res.status === 401) {
+          logout();
+          return;
+        }
         if (cancelled) return;
 
         const history = data.history || [];
@@ -480,7 +486,7 @@ export default function ChatContainer() {
           `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...authHeaders },
             body: JSON.stringify({ 
               email: userEmail, 
               session_id: sessionId 
@@ -489,6 +495,10 @@ export default function ChatContainer() {
         );
 
         const data = await res.json();
+        if (res.status === 401) {
+          logout();
+          return;
+        }
         if (res.ok) {
           console.log("Schema cached:", data.schema_summary);
           addMessageWithActivity({
@@ -535,12 +545,13 @@ export default function ChatContainer() {
     setSessionState(prev => ({ ...prev, messageCount: prev.messageCount + 1 }));
     setLoading(true);
 
+    let res: Response | undefined;
     try {
-      const res = await fetch(
+      res = await fetch(
         `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/ask`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({
             message: text,
             session_id: sessionId,
@@ -550,53 +561,47 @@ export default function ChatContainer() {
       );
 
       const data: ApiResponse = await res.json();
+      if (res.status === 401) {
+        logout();
+        return;
+      }
 
-  if (!res.ok || data.error) {
-        // Phase 3: Enhanced error handling with suggestions
+      if (!res.ok || data.error) {
         let errorMsg = data.error || "Unable to process your request. Please try again.";
         if (data.suggestions) {
           errorMsg += `\n\n**Suggestions:**\n${data.suggestions}`;
         }
-        
         addMessageWithActivity({
           text: errorMsg,
           type: "error"
         });
       } else {
-        // Phase 3: Handle all response types
         if (data.clarifier) {
-          // Write confirmation or clarification needed
           if (data.clarifier.includes("modify data") || data.clarifier.includes("Do you want me to run it")) {
-            setSessionState(prev => ({ 
-              ...prev, 
+            setSessionState(prev => ({
+              ...prev,
               awaitingConfirmation: true,
-              pendingWrite: data.sql 
+              pendingWrite: data.sql
             }));
-            
             addMessageWithActivity({
               text: `⚠️ **Write Operation Detected**\n\n${data.clarifier}`,
               type: "assistant"
             });
-            
-            // Add confirmation buttons (you'll need to implement these in MessageList)
             addMessageWithActivity({
               text: "🤔 **Confirm Action:**\n• Type 'yes' to proceed\n• Type 'no' to cancel",
               type: "system"
             });
           } else {
-            // Regular clarification
             addMessageWithActivity({
               text: `🤔 ${data.clarifier}`,
               type: "assistant"
             });
           }
         } else {
-          // Regular query response: attach structured results & sql
           const assistantTextParts: string[] = [];
-          if (data.message) assistantTextParts.push(data.message);
-          if (data.sql) assistantTextParts.push("Generated SQL available.");
+            if (data.message) assistantTextParts.push(data.message);
+            if (data.sql) assistantTextParts.push("Generated SQL available.");
 
-          // Use the normalizeResults helper function
           const normalizedResults = normalizeResults(data);
 
           addMessageWithActivity({
@@ -617,7 +622,7 @@ export default function ChatContainer() {
       setLoading(false);
       updateActivity();
     }
-  };
+  }; // end sendToBackend
 
   // Phase 3: Handle confirmation responses
   const handleUserInput = async (text: string) => {

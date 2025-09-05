@@ -27,10 +27,13 @@ export interface MessageListProps {
 
 import { useContext } from "react";
 import { SessionContext } from "./ChatContainer";
+import { useAuth } from "@/context/AuthContext";
 
 export default function MessageList({ messages, isLoading }: MessageListProps) {
   const sessionId = useContext(SessionContext);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { token, logout } = useAuth();
+  const authHeaders: Record<string,string> = token ? { Authorization: `Bearer ${token}` } : {};
   // Track chart loading and configs per message id
   const [chartLoading, setChartLoading] = useState<{[id: string]: boolean}>({});
   const [charts, setCharts] = useState<{[id: string]: ChartConfig | null}>({});
@@ -82,9 +85,10 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
         y,
         data: safeRows
       };
-      const res = await fetch("http://localhost:5000/chart", {
+  const base = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:5000";
+  const res = await fetch(`${base}/chart`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
           session_id: sessionId,
           table: { columns, rows },
@@ -92,6 +96,10 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
         })
       });
       const data = await res.json();
+      if (res.status === 401) {
+        logout();
+        return;
+      }
       setCharts(prev => ({ ...prev, [msg.id]: data.chart || chartConfig }));
     } catch (err) {
       setCharts(prev => ({ ...prev, [msg.id]: null }));

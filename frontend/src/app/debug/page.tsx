@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { useAuth } from '@/context/AuthContext';
 
 export default function DebugPage() {
   const [cookieInfo, setCookieInfo] = useState<string>('');
   const [jwtToken, setJwtToken] = useState<string | null>(null);
+  const { token: contextToken } = useAuth();
 
   useEffect(() => {
     // Get all cookies
@@ -18,22 +20,23 @@ export default function DebugPage() {
       return m ? decodeURIComponent(m[1]) : null;
     };
 
-    const token = getJwt();
-    setJwtToken(token);
-  }, []);
+    const cookieToken = getJwt();
+    setJwtToken(contextToken || cookieToken);
+  }, [contextToken]);
 
   const testBackendCall = async () => {
     try {
-      const token = jwtToken;
+  const combinedToken = jwtToken || contextToken; // prefer context token
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
       };
       
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      if (combinedToken) {
+        headers['Authorization'] = `Bearer ${combinedToken}`;
       }
 
-      const response = await fetch('http://localhost:5000/chat/test-session', {
+  const base = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:5000';
+  const response = await fetch(`${base}/chat/test-session`, {
         method: 'GET',
         headers
       });
