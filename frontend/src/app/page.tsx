@@ -34,7 +34,7 @@ export default function Home() {
         
         {/* Subtle grid pattern */}
         <div className="absolute inset-0 opacity-10" style={{
-          backgroundImage: `radial-gradient(circle at 1px 1px, #232B36 1px, transparent 0)`,
+          backgroundImage: `radial-gradient(circle at 1px 1px, #d2d2d2ff 1px, transparent 0)`,
           backgroundSize: '20px 20px'
         }}></div>
         {/* Mobile-specific smaller grid for very small screens */}

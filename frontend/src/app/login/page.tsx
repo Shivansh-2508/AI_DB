@@ -55,32 +55,32 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative" style={{ backgroundColor: '#FEFCF6' }}>
+  <div className="min-h-screen flex items-center justify-center relative" style={{ backgroundColor: '#0A0F16' }}>
       {/* Background geometric elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-10 w-16 h-16 opacity-10 animate-pulse" style={{ animationDelay: '0s', animationDuration: '4s' }}>
-          <div className="w-full h-full rounded-full" style={{ backgroundColor: '#162A2C' }}></div>
+          <div className="w-full h-full rounded-full" style={{ backgroundColor: '#1A232E' }}></div>
         </div>
         <div className="absolute top-32 right-16 w-12 h-12 opacity-15 animate-pulse" style={{ animationDelay: '1s', animationDuration: '3s' }}>
-          <div className="w-full h-full transform rotate-45" style={{ backgroundColor: '#D3C3B9' }}></div>
+          <div className="w-full h-full transform rotate-45" style={{ backgroundColor: '#232B36' }}></div>
         </div>
         <div className="absolute bottom-20 left-1/4 w-10 h-10 opacity-10 animate-pulse" style={{ animationDelay: '2s', animationDuration: '5s' }}>
-          <div className="w-full h-full transform rotate-45" style={{ backgroundColor: '#162A2C' }}></div>
+          <div className="w-full h-full transform rotate-45" style={{ backgroundColor: '#1A232E' }}></div>
         </div>
       </div>
 
-      <Card className="w-full max-w-md shadow-2xl border-2" style={{ backgroundColor: '#FEFCF6', borderColor: '#D3C3B9' }}>
+  <Card className="w-full max-w-md shadow-2xl border-2" style={{ backgroundColor: 'rgba(26, 35, 46, 0.98)', borderColor: '#232B36' }}>
         <CardHeader className="text-center pb-6">
           <div className="flex items-center justify-center space-x-3 mb-4">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#162A2C' }}>
-              <span className="text-lg font-bold" style={{ color: '#FEFCF6' }}>A</span>
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#232B36' }}>
+              <span className="text-lg font-bold" style={{ color: '#E5E7EB' }}>A</span>
             </div>
-            <span className="text-xl font-bold" style={{ color: '#162A2C' }}>AiDb</span>
+            <span className="text-xl font-bold" style={{ color: '#E5E7EB' }}>AiDb</span>
           </div>
-          <CardTitle className="text-2xl font-bold" style={{ color: '#162A2C' }}>
+          <CardTitle className="text-2xl font-bold" style={{ color: '#E5E7EB' }}>
             Welcome Back
           </CardTitle>
-          <p className="text-sm opacity-80 mt-2" style={{ color: '#162A2C' }}>
+          <p className="text-sm opacity-80 mt-2" style={{ color: '#E5E7EB' }}>
             Sign in to access your database assistant
           </p>
         </CardHeader>
@@ -88,7 +88,7 @@ export default function LoginPage() {
         <CardContent className="px-6 pb-6">
           <form onSubmit={onSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium" style={{ color: '#162A2C' }}>
+              <Label htmlFor="email" className="text-sm font-medium" style={{ color: '#E5E7EB' }}>
                 Email Address
               </Label>
               <Input
@@ -100,15 +100,15 @@ export default function LoginPage() {
                 required
                 className="border-2 transition-all duration-300 focus:scale-[1.01] h-11"
                 style={{ 
-                  borderColor: '#D3C3B9',
-                  backgroundColor: '#FEFCF6',
-                  color: '#162A2C'
+                  borderColor: '#232B36',
+                  backgroundColor: '#1A232E',
+                  color: '#E5E7EB'
                 }}
               />
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium" style={{ color: '#162A2C' }}>
+              <Label htmlFor="password" className="text-sm font-medium" style={{ color: '#E5E7EB' }}>
                 Password
               </Label>
               <Input
@@ -120,9 +120,9 @@ export default function LoginPage() {
                 required
                 className="border-2 transition-all duration-300 focus:scale-[1.01] h-11"
                 style={{ 
-                  borderColor: '#D3C3B9',
-                  backgroundColor: '#FEFCF6',
-                  color: '#162A2C'
+                  borderColor: '#232B36',
+                  backgroundColor: '#1A232E',
+                  color: '#E5E7EB'
                 }}
               />
             </div>
@@ -142,9 +142,9 @@ export default function LoginPage() {
               disabled={isLoading}
               className="w-full h-11 font-semibold border-2 transition-all duration-300 hover:scale-[1.02]"
               style={{
-                backgroundColor: '#162A2C',
-                borderColor: '#162A2C',
-                color: '#FEFCF6'
+                backgroundColor: '#232B36',
+                borderColor: '#232B36',
+                color: '#E5E7EB'
               }}
             >
               {isLoading ? (
@@ -156,15 +156,24 @@ export default function LoginPage() {
                 'Sign In'
               )}
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-11 font-semibold border-2 transition-all duration-300 hover:scale-[1.02] mt-2"
+              style={{ backgroundColor: '#1A232E', color: '#E5E7EB', border: '2px solid #232B36' }}
+              onClick={() => router.push('/')}
+            >
+              Back to Home
+            </Button>
 
             <div className="text-center pt-4 border-t" style={{ borderColor: '#D3C3B9' }}>
-              <p className="text-sm opacity-70" style={{ color: '#162A2C' }}>
+              <p className="text-sm opacity-70" style={{ color: '#E5E7EB' }}>
                 Don&apos;t have an account?{' '}
                 <button
                   type="button"
                   onClick={() => router.push('/signup')}
                   className="font-medium hover:underline transition-colors"
-                  style={{ color: '#162A2C' }}
+                  style={{ color: '#E5E7EB' }}
                 >
                   Sign up
                 </button>
