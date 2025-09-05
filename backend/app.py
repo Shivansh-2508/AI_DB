@@ -3,8 +3,10 @@ from flask_cors import CORS
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import (
     JWTManager, create_access_token,
-    jwt_required, get_jwt_identity
+    jwt_required, get_jwt_identity,
+    exceptions as jwt_exceptions
 )
+from jwt.exceptions import ExpiredSignatureError
 import datetime
 import io
 import base64
@@ -30,13 +32,44 @@ from nlp_to_sql import (
 
 # -------------------- App + Extensions --------------------
 
+
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
 
 bcrypt = Bcrypt(app)
+
 app.config["JWT_SECRET_KEY"] = "super-secret-key"  # TODO: set via env var
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = datetime.timedelta(hours=1)
 jwt = JWTManager(app)
+
+# --- JWT and General Error Handlers for Debugging ---
+import traceback
+
+@app.errorhandler(jwt_exceptions.NoAuthorizationError)
+def handle_no_auth_error(e):
+    print("[JWT ERROR] NoAuthorizationError:", str(e))
+    print("[JWT ERROR] Authorization header:", request.headers.get("Authorization"))
+    return jsonify({"error": "No valid JWT provided", "details": str(e)}), 422
+
+@app.errorhandler(jwt_exceptions.JWTDecodeError)
+def handle_jwt_decode_error(e):
+    print("[JWT ERROR] JWTDecodeError:", str(e))
+    print("[JWT ERROR] Authorization header:", request.headers.get("Authorization"))
+    return jsonify({"error": "JWT decode error", "details": str(e)}), 422
+
+
+@app.errorhandler(ExpiredSignatureError)
+def handle_jwt_expired_error(e):
+    print("[JWT ERROR] ExpiredSignatureError:", str(e))
+    print("[JWT ERROR] Authorization header:", request.headers.get("Authorization"))
+    return jsonify({"error": "JWT expired", "details": str(e)}), 422
+
+@app.errorhandler(Exception)
+def handle_general_error(e):
+    print("[GENERAL ERROR]", str(e))
+    print("[GENERAL ERROR] Authorization header:", request.headers.get("Authorization"))
+    traceback.print_exc()
+    return jsonify({"error": str(e)}), 500
 
 # Create API Blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -94,26 +127,18 @@ def login():
             print(f"Password check failed for: {email}")
             return jsonify({"error": "Invalid credentials"}), 401
 
-        # Create token with consistent field names
-        token_payload = {
-            "user_id": user_id,  # Keep as user_id for backend consistency
-            "email": email, 
-            "role": role
-        }
-        
-        access_token = create_access_token(identity=token_payload)
-        
+        # Use user_id as string for JWT identity
+        access_token = create_access_token(identity=str(user_id))
         # Return user data with 'id' field for frontend consistency
         user_data = {
-            "id": user_id,      # Frontend expects 'id'
-            "user_id": user_id, # Keep both for compatibility
-            "email": email, 
+            "id": user_id,
+            "user_id": user_id,
+            "email": email,
             "role": role
         }
-        
         print(f"Login successful for: {email}, token created")
         return jsonify({
-            "access_token": access_token, 
+            "access_token": access_token,
             "user": user_data
         }), 200
         
@@ -125,20 +150,12 @@ def login():
 @jwt_required()
 def protected():
     try:
-        current_user = get_jwt_identity()
-        print(f"Protected route accessed by: {current_user}")  # Debug log
-        
-        # Ensure consistent response format
+        current_user_id = get_jwt_identity()
+        print(f"Protected route accessed by user_id: {current_user_id}")  # Debug log
         response_data = {
             "message": "Protected route accessed successfully",
-            "user": {
-                "id": current_user.get("user_id"),  # Map user_id to id
-                "user_id": current_user.get("user_id"),
-                "email": current_user.get("email"),
-                "role": current_user.get("role")
-            }
+            "user_id": current_user_id
         }
-        
         return jsonify(response_data), 200
         
     except Exception as e:
