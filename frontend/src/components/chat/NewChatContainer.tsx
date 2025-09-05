@@ -79,10 +79,11 @@ export default function ChatContainer() {
     return token ? { Authorization: `Bearer ${token}` } : {} as Record<string,string>;
   }, [token]);
   
-  // Phase 3: Persistent session ID with cleanup
+  // Phase 3: Persistent session ID with cleanup (scoped to user)
+  const sessionKey = userEmail ? `chat_session_id_${userEmail}` : "chat_session_id_anon";
   const [sessionId] = useState(() => {
     try {
-      const existing = localStorage.getItem("chat_session_id");
+      const existing = localStorage.getItem(sessionKey);
       if (existing) return existing;
     } catch {
       // localStorage might be unavailable in some environments (SSR/locked down)
@@ -92,8 +93,8 @@ export default function ChatContainer() {
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2);
 
-    try { localStorage.setItem("chat_session_id", newId); } catch { /* ignore */ }
-    console.log(`🔄 New session created: ${newId}`);
+    try { localStorage.setItem(sessionKey, newId); } catch { /* ignore */ }
+    console.log(`🔄 New session created for key ${sessionKey}: ${newId}`);
     return newId;
   });
 

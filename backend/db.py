@@ -32,7 +32,7 @@ def _json_default(o: Any) -> Any:
     return str(o)
 
 
-def save_message(session_id: str, message_id: Optional[str], content: Any, role: str) -> None:
+def save_message(session_id: str, message_id: Optional[str], content: Any, role: str, user_id: Optional[str] = None) -> None:
     """
     Persist a chat message to Postgres.
 
@@ -54,37 +54,48 @@ def save_message(session_id: str, message_id: Optional[str], content: Any, role:
             if message_id:
                 cur.execute(
                     """
-                    INSERT INTO chat_messages (session_id, message_id, content, role)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO chat_messages (session_id, message_id, content, role, user_id)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (message_id)
-                    DO UPDATE SET content = EXCLUDED.content, role = EXCLUDED.role
+                    DO UPDATE SET content = EXCLUDED.content, role = EXCLUDED.role, user_id = EXCLUDED.user_id
                     """,
-                    (session_id, message_id, content_to_store, role),
+                    (session_id, message_id, content_to_store, role, user_id),
                 )
             else:
                 cur.execute(
-                    "INSERT INTO chat_messages (session_id, content, role) VALUES (%s, %s, %s)",
-                    (session_id, content_to_store, role),
+                    "INSERT INTO chat_messages (session_id, content, role, user_id) VALUES (%s, %s, %s, %s)",
+                    (session_id, content_to_store, role, user_id),
                 )
         conn.commit()
     finally:
         conn.close()
 
 
-def get_chat_history(session_id: str) -> List[Dict[str, Any]]:
-    """Return chat history for a session."""
+def get_chat_history(session_id: str, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Return chat history for a session and user."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT message_id, content, role, timestamp
-                FROM chat_messages
-                WHERE session_id = %s
-                ORDER BY timestamp ASC
-                """,
-                (session_id,),
-            )
+            if user_id:
+                cur.execute(
+                    """
+                    SELECT message_id, content, role, timestamp
+                    FROM chat_messages
+                    WHERE session_id = %s AND user_id = %s
+                    ORDER BY timestamp ASC
+                    """,
+                    (session_id, user_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT message_id, content, role, timestamp
+                    FROM chat_messages
+                    WHERE session_id = %s
+                    ORDER BY timestamp ASC
+                    """,
+                    (session_id,),
+                )
             rows = cur.fetchall()
 
         parsed = []

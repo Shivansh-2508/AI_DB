@@ -25,9 +25,10 @@ export interface Message extends MessageBubbleProps {
 export interface MessageListProps {
   messages: Message[];
   isLoading: boolean;
+  schemaLoading?: boolean;
 }
 
-export default function MessageList({ messages, isLoading }: MessageListProps) {
+export default function MessageList({ messages, isLoading, schemaLoading }: MessageListProps) {
   const sessionId = useContext(SessionContext);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { token, logout } = useAuth();
@@ -206,8 +207,22 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
         );
       })}
 
+      {/* Schema Loading Indicator - Always blocks input */}
+      {schemaLoading && (
+        <div className="flex gap-3 justify-center">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
+            <Database className="h-4 w-4 text-emerald-400 animate-pulse" />
+          </div>
+          <div className="rounded px-4 py-3 bg-gray-800/50 text-gray-100 max-w-xs">
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+              <span className="text-sm text-emerald-300">Loading database schema, please wait...</span>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Loading Indicator - Minimal */}
-      {isLoading && (
+      {isLoading && !schemaLoading && (
         <div className="flex gap-3 justify-start">
           <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
             <Bot className="h-4 w-4 text-gray-300" />
@@ -224,23 +239,12 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
       {/* Empty State - Mobile Optimized */}
       {messages.length === 0 && !isLoading && (
         <div className="flex flex-col items-center justify-center py-12 sm:py-20 text-center px-4">
-          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-r from-emerald-500 to-blue-500 flex items-center justify-center mb-4 sm:mb-6 shadow-lg">
-            <Database className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
-          </div>
+          
           <h3 className="text-lg sm:text-xl font-semibold text-white mb-2">Ready to explore your database</h3>
           <p className="text-gray-400 max-w-md leading-relaxed text-sm sm:text-base mb-4 sm:mb-6">
             Ask me anything about your database. I can help you query tables, analyze data, and generate insights using natural language.
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-md">
-            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
-              <div className="text-sm font-medium text-white mb-1">Try asking:</div>
-              <div className="text-xs text-gray-400">&ldquo;Show me all customers&rdquo;</div>
-            </div>
-            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
-              <div className="text-sm font-medium text-white mb-1">Or explore:</div>
-              <div className="text-xs text-gray-400">&ldquo;What tables are available?&rdquo;</div>
-            </div>
-          </div>
+          
         </div>
       )}
 

@@ -201,7 +201,13 @@ pending_queries = {}
 
 def remember(session_id: str, role: str, content: object, message_id: str | None = None) -> None:
     try:
-        save_message(session_id, message_id, content, role)
+        # Try to get user_id from Flask context if available
+        from flask_jwt_extended import get_jwt_identity
+        try:
+            user_id = get_jwt_identity()
+        except Exception:
+            user_id = None
+        save_message(session_id, message_id, content, role, user_id)
     except Exception:
         chat_history.setdefault(session_id, []).append(
             {"role": role, "content": content})
@@ -229,11 +235,14 @@ def normalize_history(raw_history):
     return normalized
 
 
-def get_history(session_id: str):
+def get_history(session_id: str, user_id: str = None):
     try:
-        raw = get_chat_history(session_id)
+        raw = get_chat_history(session_id, user_id)
         return normalize_history(raw)
     except Exception:
+        # fallback for in-memory (MVP/testing)
+        if user_id:
+            return normalize_history([msg for msg in chat_history.get(session_id, []) if msg.get('user_id') == user_id])
         return normalize_history(chat_history.get(session_id, []))
 
 
@@ -267,8 +276,8 @@ def chat_handler():
 
     if content:
         try:
-            save_message(session_id, message_id, content, role)
-            return jsonify({"message": "saved", "history": get_history(session_id)}), 200
+            save_message(session_id, message_id, content, role, user_id)
+            return jsonify({"message": "saved", "history": get_history(session_id, user_id)}), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -497,8 +506,9 @@ def generate_chart():
 @app.route('/chat/<session_id>', methods=['GET'])
 @jwt_required()
 def get_chat(session_id):
+    user_id = get_jwt_identity()
     try:
-        history = get_history(session_id)
+        history = get_history(session_id, user_id)
         return jsonify({"history": history}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -508,6 +518,7 @@ def get_chat(session_id):
 @jwt_required()
 def save_chat_message():
     data = request.get_json(silent=True) or {}
+    user_id = get_jwt_identity()
     session_id = data.get('session_id') or data.get('sessionId') or 'default'
     message_id = data.get('message_id') or data.get('messageId')
     text = data.get('text') or data.get('content') or data.get('message')
@@ -517,8 +528,8 @@ def save_chat_message():
         return jsonify({"error": "text (message) is required"}), 400
 
     try:
-        save_message(session_id, message_id, text, role)
-        return jsonify({"message": "saved", "history": get_history(session_id)}), 200
+        save_message(session_id, message_id, text, role, user_id)
+        return jsonify({"message": "saved", "history": get_history(session_id, user_id)}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

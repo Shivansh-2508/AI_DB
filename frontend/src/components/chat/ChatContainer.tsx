@@ -68,6 +68,7 @@ export default function ChatContainer() {
   const { user, token, logout } = useAuth();
   const userEmail = user?.email || null;
   const [loading, setLoading] = useState(false);
+  const [isSchemaLoading, setIsSchemaLoading] = useState(true);
   // ...existing code...
   const [sessionState, setSessionState] = useState<SessionState>({
     isActive: true,
@@ -79,10 +80,11 @@ export default function ChatContainer() {
     return token ? { Authorization: `Bearer ${token}` } : {} as Record<string,string>;
   }, [token]);
   
-  // Phase 3: Persistent session ID with cleanup
+  // Phase 3: Persistent session ID with cleanup (scoped to user)
+  const sessionKey = userEmail ? `chat_session_id_${userEmail}` : "chat_session_id_anon";
   const [sessionId] = useState(() => {
     try {
-      const existing = localStorage.getItem("chat_session_id");
+      const existing = localStorage.getItem(sessionKey);
       if (existing) return existing;
     } catch {
       // localStorage might be unavailable in some environments (SSR/locked down)
@@ -92,8 +94,8 @@ export default function ChatContainer() {
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2);
 
-    try { localStorage.setItem("chat_session_id", newId); } catch { /* ignore */ }
-    console.log(`🔄 New session created: ${newId}`);
+    try { localStorage.setItem(sessionKey, newId); } catch { /* ignore */ }
+    console.log(`🔄 New session created for key ${sessionKey}: ${newId}`);
     return newId;
   });
 
@@ -457,6 +459,7 @@ export default function ChatContainer() {
     if (!userEmail) return;
 
     async function prefetchSchema() {
+      setIsSchemaLoading(true);
       try {
         const res = await fetch(
           `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat`,
@@ -475,23 +478,24 @@ export default function ChatContainer() {
           logout();
           return;
         }
-        if (res.ok) {
+        if (res.ok && data.schema_summary) {
           console.log("Schema cached:", data.schema_summary);
           addMessageWithActivity({
             text: "✅ Database schema cached and ready for queries.",
             type: "system"
           });
-          
           addMessageWithActivity({
             text: `💡 **Quick tips:**\n• Try: "show me the customers table"\n• Ask: "what tables are available?"\n• Query: "find orders from last week"\n\n*Session ID: \`${sessionId}\`*`,
             type: "system"
           });
+          setIsSchemaLoading(false);
         } else {
           console.error("Schema prefetch failed:", data.error);
           addMessageWithActivity({
             text: "⚠️ Failed to prefetch schema. Queries may not work correctly.",
             type: "error"
           });
+          // keep loading true if schema is not available
         }
       } catch {
         console.error("Prefetch error");
@@ -499,6 +503,7 @@ export default function ChatContainer() {
           text: "⚠️ Schema prefetch request failed.",
           type: "error"
         });
+        // keep loading true if schema is not available
       }
     }
 
@@ -642,7 +647,7 @@ export default function ChatContainer() {
           <div className="h-full relative">
             <SessionContext.Provider value={sessionId}>
               <div className="absolute inset-0">
-                <MessageList messages={messages} isLoading={loading} />
+                <MessageList messages={messages} isLoading={loading || isSchemaLoading} schemaLoading={isSchemaLoading} />
               </div>
             </SessionContext.Provider>
           </div>
@@ -650,11 +655,11 @@ export default function ChatContainer() {
 
         {/* Input Area - Fixed at bottom with blur effect */}
         <div className="flex-shrink-0 border-t border-gray-800/40 bg-[#0F1A1C]/80 backdrop-blur-xl">
-          <div className="max-w-3xl mx-auto px-4 py-4">
+          <div className="max-w-4xl mx-auto px-4 py-4">
             <ChatInput
               onSend={handleUserInput}
-              disabled={loading}
-              placeholder="Ask about your database..."
+              disabled={loading || isSchemaLoading}
+              placeholder={isSchemaLoading ? "Please wait while database schema is loading..." : "Ask about your database..."}
               awaitingConfirmation={sessionState.awaitingConfirmation}
               sessionActive={sessionState.isActive}
             />
