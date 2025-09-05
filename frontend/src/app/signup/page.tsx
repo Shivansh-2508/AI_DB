@@ -3,7 +3,7 @@
 import { useState } from "react";
 import api from "@/lib/api";
 
-export default function LoginPage() {
+export default function SignUpPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -13,17 +13,16 @@ export default function LoginPage() {
     setMessage("");
 
     try {
-      const res = await api.login(email, password);
-      setMessage(`Login successful! Welcome ${res.user.email}`);
-      console.log("Access Token:", res.access_token);
+      const res = await api.signup(email, password);
+      setMessage("Signup successful! You can now log in.");
     } catch (err: any) {
-      setMessage(`Login error: ${err.message}`);
+      setMessage(`Signup error: ${err.message}`);
     }
   };
 
   return (
     <div className="max-w-md mx-auto mt-20 p-6 border rounded shadow">
-      <h2 className="text-2xl font-bold mb-4">Login</h2>
+      <h2 className="text-2xl font-bold mb-4">Sign Up</h2>
       <form onSubmit={onSubmit} className="space-y-4">
         <input
           type="email"
@@ -43,9 +42,9 @@ export default function LoginPage() {
         />
         <button
           type="submit"
-          className="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600"
+          className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
         >
-          Login
+          Sign Up
         </button>
       </form>
       {message && <p className="mt-4 text-red-500">{message}</p>}
