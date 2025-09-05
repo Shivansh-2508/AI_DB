@@ -622,37 +622,114 @@ export default function ChatContainer() {
   }, []);
 
   return (
-    <div className="h-screen flex bg-[#0A1112]">
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col relative">
-        {/* Header */}
-        <div className="flex-shrink-0 border-b border-emerald-400/10 bg-white/10 backdrop-blur-xl shadow-2xl">
-          <div className="max-w-3xl mx-auto px-4 py-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-r from-emerald-400/80 to-sky-400/80 shadow-lg">
-                <Database className="h-4 w-4 text-gray-100" />
+    <div className="h-screen flex flex-col bg-[#0A0F16]">
+      {/* Chat Header with glassmorphism effect */}
+      <div className="flex-shrink-0 border-b border-gray-800/20 backdrop-blur-xl bg-[#0A0F16]/80 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-5">
+              {/* AI Icon with premium gradient */}
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-indigo-600/90 via-violet-600/90 to-purple-600/90 shadow-lg shadow-indigo-500/20 ring-1 ring-white/10">
+                <Database className="h-5 w-5 text-white/90" />
               </div>
-              <h1 className="text-lg font-bold text-gray-100 tracking-tight drop-shadow">Database Assistant</h1>
+              
+              <div className="flex items-center gap-8">
+                <div>
+                  <h1 className="text-base font-semibold text-white/90 tracking-tight">
+                    Database Assistant
+                  </h1>
+                  <div className="flex items-center gap-3 text-xs text-gray-400/80 mt-1">
+                    <span className="font-mono tracking-tight">{sessionState.messageCount} queries</span>
+                    {sessionState.isActive && (
+                      <>
+                        <span className="text-gray-600">•</span>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/80 animate-pulse shadow-sm shadow-emerald-500/20"></div>
+                          <span>active session</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Vertical Divider with glow */}
+                <div className="h-10 w-px bg-gradient-to-b from-gray-800/0 via-gray-800/50 to-gray-800/0"></div>
+
+                {/* Environment Info */}
+                <div className="flex items-center px-3 py-1 rounded-full bg-gray-800/30 ring-1 ring-white/5">
+                  <span className="text-xs font-medium text-gray-400/90">
+                    {process.env.NEXT_PUBLIC_API_BASE?.includes('prod') ? 'Production' : 'Development'}
+                  </span>
+                </div>
+              </div>
             </div>
+            
+            {/* Controls with modern styling */}
+            <div className="flex items-center gap-5">
+               {/* Session Status */}
+               {!sessionState.isActive && (
+                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-800/30 ring-1 ring-white/5">
+                   <div className="w-1.5 h-1.5 rounded-full bg-gray-500"></div>
+                   <span className="text-xs font-medium text-gray-400/90">Session inactive</span>
+                 </div>
+               )}
+               
+               {/* Confirmation Status */}
+               {sessionState.awaitingConfirmation && (
+                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 ring-1 ring-amber-500/20">
+                   <AlertTriangle className="h-3.5 w-3.5 text-amber-500/90" />
+                   <span className="text-xs font-medium text-amber-500/90">Awaiting confirmation</span>
+                 </div>
+               )}
+
+               {/* Clear Chat Button */}
+               <button
+                 type="button"
+                 disabled={clearing}
+                 onClick={() => {
+                   if (typeof window !== 'undefined' && window.confirm('Clear all chat history for this session?')) {
+                     clearChatHistory();
+                   }
+                 }}
+                 className="px-4 py-2 text-xs font-medium text-gray-400/90 hover:text-white/90 bg-gray-800/30 hover:bg-gray-700/50 rounded-lg transition-all duration-200 ring-1 ring-white/5 hover:ring-white/10 shadow-sm"
+                 aria-label="Clear chat history"
+               >
+                 {clearing ? 'Clearing...' : 'Clear Chat'}
+               </button>
+
+               {/* Logout Button */}
+               <button
+                 type="button"
+                 onClick={() => {
+                   logout();
+                   if (typeof window !== 'undefined') {
+                     window.location.href = '/';
+                   }
+                 }}
+                 className="px-4 py-2 text-xs font-medium text-white/90 bg-indigo-600/20 hover:bg-indigo-600/30 rounded-lg transition-all duration-200 ring-1 ring-indigo-500/20 hover:ring-indigo-500/30 shadow-sm"
+                 aria-label="Logout"
+               >
+                 Logout
+               </button>
+             </div>
           </div>
         </div>
+      </div>
 
-        {/* Messages Area with gradient background */}
-        <div className="flex-1 min-h-0 bg-gradient-to-b from-[#0F1A1C] to-[#0A1112] overflow-hidden">
-          <div className="h-full relative">
-            <SessionContext.Provider value={sessionId}>
-              <div className="absolute inset-0">
-                <MessageList messages={messages} isLoading={loading} />
-              </div>
-            </SessionContext.Provider>
-          </div>
+      {/* Messages Area with custom scrollbar */}
+      <SessionContext.Provider value={sessionId}>
+        <div className="flex-1 min-h-0 bg-[#0A0F16] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-900/20 [&::-webkit-scrollbar-thumb]:bg-gray-700/30 [&::-webkit-scrollbar-thumb]:rounded-full">
+          <MessageList messages={messages} isLoading={loading} />
         </div>
+      </SessionContext.Provider>
 
-        {/* Input Area - Fixed at bottom with blur effect */}
-        <div className="flex-shrink-0 border-t border-gray-800/40 bg-[#0F1A1C]/80 backdrop-blur-xl">
-          <div className="max-w-3xl mx-auto px-4 py-4">
-            <ChatInput
-              onSend={handleUserInput}
+      {/* Input Area with glass effect */}
+      <div className="bg-gradient-to-t from-[#0A0F16] to-transparent pt-10">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0A0F16] to-[#0A0F16]/80 backdrop-blur-xl"></div>
+          <div className="relative">
+            <ChatInput 
+              onSend={handleUserInput} 
               disabled={loading}
               placeholder="Ask about your database..."
               awaitingConfirmation={sessionState.awaitingConfirmation}
@@ -663,4 +740,4 @@ export default function ChatContainer() {
       </div>
     </div>
   );
-  }
+}

@@ -110,80 +110,70 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto py-6 space-y-8 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-900/20 [&::-webkit-scrollbar-thumb]:bg-gray-700/30 [&::-webkit-scrollbar-thumb]:rounded-full">
-        <div className="max-w-3xl mx-auto px-6">
+    <div className="flex flex-col h-full bg-[#0F1A1C]">
+      <div className="flex-1 overflow-y-auto py-4 space-y-6">
+        <div className="max-w-screen-xl mx-auto px-4">
           {messages.map((message: Message) => {
             const isUser = message.isUser || message.type === "user";
             return (
               <div
                 key={message.id}
-                className="group relative mb-6 last:mb-0 transition-all duration-200"
+                className="group relative mb-6 last:mb-0"
               >
-                <div className={`flex gap-5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-                  {/* Avatar with premium effect */}
+                <div className={`flex gap-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                  {/* Avatar */}
                   <div className="flex-shrink-0">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-sm transition-all duration-200 ${
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                       isUser 
-                        ? 'bg-gray-800/40 text-gray-300 hover:bg-gray-700/60 ring-1 ring-white/5' 
-                        : 'bg-gradient-to-br from-indigo-600/90 via-violet-600/90 to-purple-600/90 text-white/90 shadow-lg shadow-indigo-500/20 ring-1 ring-white/10'
+                        ? 'bg-gray-700/40 text-gray-300' 
+                        : 'bg-gradient-to-r from-emerald-500/80 to-sky-500/80 text-gray-100'
                     }`}>
-                      {isUser ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
+                      {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                     </div>
                   </div>
 
-                  {/* Message Content with minimal styling */}
+                  {/* Message Content */}
                   <div className={`flex-1 ${isUser ? 'text-right' : 'text-left'}`}>
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className={`text-xs font-medium tracking-wide ${isUser ? 'text-gray-400 order-last' : 'text-indigo-400/90'}`}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className={`text-xs font-medium ${isUser ? 'text-gray-400 order-last' : 'text-emerald-500/90'}`}>
                         {isUser ? 'You' : 'Assistant'}
                       </span>
-                      <span className="text-xs text-gray-500/60">
+                      <span className="text-xs text-gray-500">
                         {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     
-                    <div className={`prose prose-sm max-w-none transition-all duration-200
-                      ${isUser ? 'prose-gray' : 'prose-invert'}
-                      hover:prose-a:text-indigo-400 prose-p:leading-relaxed prose-p:text-gray-300
-                      prose-pre:bg-[#0A0F16] prose-pre:border prose-pre:border-gray-800/30
-                      prose-pre:rounded-xl prose-code:text-indigo-400/90 prose-strong:text-gray-200`}>
+                    <div className={`prose prose-sm max-w-none ${isUser ? 'prose-gray' : 'prose-invert'}`}>
                       <MessageBubble {...message} />
                     </div>
 
                     {message.results && (
-                      <div className="mt-6 space-y-4">
-                        <div className="relative group">
-                          <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/10 to-violet-600/10 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                          <div className="relative bg-[#0A0F16]/80 rounded-xl p-5 backdrop-blur-xl border border-gray-800/30 ring-1 ring-white/5 transition-all duration-200">
-                            <TableView results={message.results} />
-                          </div>
+                      <div className="mt-4 space-y-4">
+                        <div className="bg-gray-900/50 rounded-lg p-4 backdrop-blur">
+                          <TableView results={message.results} />
                         </div>
                         
                         {message.sql && (
-                          <div className="group relative">
-                            <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/5 to-violet-600/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                            <div className="relative bg-[#0A0F16]/80 rounded-xl p-5 backdrop-blur-xl border border-gray-800/30 ring-1 ring-white/5 transition-all duration-200">
-                              <div className="text-xs text-indigo-400/90 mb-3 font-mono font-medium">Generated SQL:</div>
-                              <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap bg-black/20 rounded-lg p-4">{String(message.sql)}</pre>
-                            </div>
+                          <div className="bg-gray-900/50 rounded-lg p-4 backdrop-blur">
+                            <div className="text-xs text-gray-400 mb-2 font-mono">Generated SQL:</div>
+                            <pre className="text-xs text-gray-200 font-mono whitespace-pre-wrap">{String(message.sql)}</pre>
                           </div>
                         )}
 
                         {isTableResult(message.results) && message.results.columns.length >= 2 && message.results.rows.length > 1 && (
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
                             <button
-                              className={`inline-flex items-center gap-2.5 px-4 py-2 text-xs font-medium rounded-lg transition-all duration-200 ${
+                              className={`inline-flex items-center gap-2 px-4 py-2 text-xs rounded-lg transition ${
                                 chartLoading[message.id]
-                                  ? 'bg-gray-800/40 text-gray-400 cursor-not-allowed ring-1 ring-white/5'
-                                  : 'bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 ring-1 ring-indigo-500/20 hover:ring-indigo-500/30'
+                                  ? 'bg-gray-800 text-gray-400 cursor-not-allowed'
+                                  : 'bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30'
                               }`}
                               onClick={() => handleGenerateChart(message)}
                               disabled={chartLoading[message.id]}
                             >
                               {chartLoading[message.id] ? (
                                 <>
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  <Loader2 className="h-3 w-3 animate-spin" />
                                   <span>Generating Chart...</span>
                                 </>
                               ) : (
@@ -196,7 +186,7 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
                         )}
 
                         {charts[message.id] && (
-                          <div className="mt-4 bg-[#0A0F16]/80 rounded-xl p-5 backdrop-blur-xl border border-gray-800/30 ring-1 ring-white/5">
+                          <div className="mt-4 bg-gray-900/50 rounded-lg p-4 backdrop-blur">
                             <ChartRenderer config={charts[message.id]!} />
                           </div>
                         )}
@@ -209,7 +199,7 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
                         if (jsonMatch && jsonMatch[1]) {
                           const parsed = JSON.parse(jsonMatch[1]);
                           return (
-                            <div className="mt-4 bg-[#0A0F16]/80 rounded-xl p-5 backdrop-blur-xl border border-gray-800/30 ring-1 ring-white/5">
+                            <div className="mt-4 bg-gray-900/50 rounded-lg p-4 backdrop-blur">
                               <TableView results={parsed} />
                             </div>
                           );
@@ -225,47 +215,37 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
             );
           })}
 
-          {/* Loading indicator with minimal animation */}
+          {/* Loading indicator */}
           {isLoading && (
-            <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="flex gap-4 animate-in fade-in slide-in-from-bottom-4">
               <div className="flex-shrink-0">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-indigo-600/90 via-violet-600/90 to-purple-600/90 shadow-lg shadow-indigo-500/20 ring-1 ring-white/10">
-                  <Bot className="h-5 w-5 text-white/90" />
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-r from-emerald-500/80 to-sky-500/80">
+                  <Bot className="h-4 w-4 text-gray-100" />
                 </div>
               </div>
               <div className="flex-1">
-                <div className="relative">
-                  <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/5 to-violet-600/5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-                  <div className="bg-[#0A0F16]/80 rounded-lg p-3 ring-1 ring-gray-800/30">
-                    <div className="flex items-center gap-2.5">
-                      <div className="h-4 w-4 relative">
-                        <Loader2 className="h-4 w-4 absolute animate-spin text-indigo-400/90" />
-                      </div>
-                      <span className="text-sm text-gray-300/90 font-medium">{getLoadingMessage()}</span>
-                    </div>
-                    <div className="flex gap-1.5 mt-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-500/20 animate-pulse"></div>
-                      <div className="w-1.5 h-1.5 rounded-full bg-violet-500/20 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                      <div className="w-1.5 h-1.5 rounded-full bg-purple-500/20 animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-                    </div>
-                  </div>
+                <div className="flex items-center gap-3 text-gray-400">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-500/90" />
+                  <span className="text-sm">{getLoadingMessage()}</span>
+                </div>
+                <div className="flex gap-1.5 mt-3">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/30 animate-pulse"></div>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/30 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/30 animate-pulse" style={{ animationDelay: '0.4s' }}></div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Empty state with premium design */}
+          {/* Empty state */}
           {messages.length === 0 && !isLoading && (
-            <div className="flex flex-col items-center justify-center min-h-[400px] text-center py-10">
-              <div className="relative group mb-8">
-                <div className="absolute inset-0 bg-gradient-to-br from-indigo-600/30 via-violet-600/30 to-purple-600/30 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-2xl"></div>
-                <div className="relative w-20 h-20 rounded-2xl flex items-center justify-center bg-gradient-to-br from-indigo-600/10 via-violet-600/10 to-purple-600/10 backdrop-blur-xl transition-all duration-300 group-hover:scale-105 ring-1 ring-white/10">
-                  <Database className="h-10 w-10 text-indigo-400/90 transition-transform duration-300 group-hover:scale-110" />
-                </div>
+            <div className="flex flex-col items-center justify-center h-64 text-center py-12">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-gradient-to-r from-emerald-500/20 to-sky-500/20 mb-6">
+                <Database className="h-8 w-8 text-emerald-500/90" />
               </div>
-              <h3 className="text-xl font-semibold mb-3 text-white/90 tracking-tight">Ready to Query</h3>
-              <p className="max-w-sm text-sm leading-relaxed text-gray-400/90">
-                Ask me anything about your database. I can help you explore tables, run queries, and analyze your data.
+              <h3 className="text-lg font-medium mb-3 text-gray-100">Ready to Query</h3>
+              <p className="max-w-md text-sm leading-relaxed text-gray-400">
+                Ask me anything about your database. I can help you explore tables, run queries, and analyze your data with natural language.
               </p>
             </div>
           )}

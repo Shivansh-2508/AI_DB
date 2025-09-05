@@ -9,6 +9,8 @@ export interface MessageBubbleProps {
 
 export default function MessageBubble({
   text,
+  isUser,
+  isError
 }: MessageBubbleProps) {
   const renderContent = (content: string) => {
     if (content === null || content === undefined) return null;
@@ -41,18 +43,22 @@ export default function MessageBubble({
       const language = match[1] || '';
       const code = match[2] || '';
       parts.push(
-        <div key={parts.length} className="rounded border p-4 my-3 overflow-x-auto font-mono text-sm" style={{
-          backgroundColor: '#162A2C',
-          borderColor: '#D3C3B9'
-        }}>
-          {language && (
-            <div className="text-xs mb-2 uppercase tracking-wide" style={{ color: '#D3C3B9' }}>
-              {language}
-            </div>
-          )}
-          <pre className="leading-relaxed whitespace-pre-wrap" style={{ color: '#FEFCF6' }}>
-            {code}
-          </pre>
+        <div key={parts.length} className="relative group rounded-xl ring-1 ring-gray-800/50 p-5 my-4 overflow-x-auto font-mono text-sm bg-black/30 backdrop-blur-sm">
+          {/* Gradient hover effect for code blocks */}
+          <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/5 to-violet-600/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+          
+          <div className="relative">
+            {language && (
+              <div className="flex items-center gap-2 mb-3">
+                <div className="px-2 py-1 text-xs font-medium text-indigo-400/90 bg-indigo-600/10 rounded-md ring-1 ring-indigo-500/20 uppercase tracking-wide">
+                  {language}
+                </div>
+              </div>
+            )}
+            <pre className="leading-relaxed whitespace-pre-wrap text-gray-300">
+              {code}
+            </pre>
+          </div>
         </div>
       );
 
@@ -83,15 +89,31 @@ export default function MessageBubble({
     // Only call replace when processed is a string
     if (typeof processed === 'string') {
       processed = processed.replace(boldRegex, '<strong class="font-medium">$1</strong>');
-      processed = processed.replace(inlineCodeRegex, '<code class="px-2 py-1 rounded text-xs font-mono border" style="background-color: #162A2C; border-color: #D3C3B9; color: #FEFCF6;">$1</code>');
+      processed = processed.replace(inlineCodeRegex, '<code class="px-2 py-1 rounded-md text-xs font-mono bg-black/30 text-indigo-400/90 ring-1 ring-indigo-500/20">$1</code>');
     }
     
     return <span key={key} dangerouslySetInnerHTML={{ __html: processed }} />;
   };
 
   return (
-    <div className="text-sm leading-relaxed whitespace-pre-wrap">
-      {renderContent(text)}
+    <div
+      className={`relative group text-sm leading-relaxed whitespace-pre-wrap px-5 py-3 rounded-xl shadow-lg backdrop-blur-xl transition-all duration-200
+        ${isError 
+          ? 'bg-red-500/10 ring-1 ring-red-500/20 text-red-200' 
+          : isUser 
+            ? 'bg-[#0A0F16]/80 ring-1 ring-gray-800/30 text-gray-100 ml-auto hover:shadow-indigo-500/5' 
+            : 'bg-[#0A0F16]/80 ring-1 ring-gray-800/30 text-gray-100 hover:shadow-indigo-500/5'
+        }
+      `}
+      style={{ maxWidth: isUser ? '70%' : '80%', wordBreak: 'break-word' }}
+    >
+      {/* Gradient hover effect */}
+      <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/5 to-violet-600/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+      
+      {/* Content with relative positioning to appear above the gradient */}
+      <div className="relative">
+        {renderContent(text)}
+      </div>
     </div>
   );
 }

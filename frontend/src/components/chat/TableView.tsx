@@ -115,43 +115,52 @@ export default function TableView({ results }: { results: unknown }) {
     };
 
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-4 my-4">
-        <div className="text-sm text-gray-700 font-medium mb-3">{summarizeResults(results)}</div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <button
-            onClick={() => setShowJson((v) => !v)}
-            className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-sm font-medium transition-colors"
-            type="button"
-          >
-            {showJson ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            {showJson ? "Hide JSON" : "View JSON"}
-          </button>
+      <div className="relative group">
+        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/5 to-violet-600/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
 
-          <button
-            onClick={copyJson}
-            className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-sm font-medium transition-colors"
-            type="button"
-            title="Copy JSON to clipboard"
-          >
-            <Copy className="w-3 h-3" />
-            Copy JSON
-          </button>
+        <div className="relative bg-[#0A0F16]/80 ring-1 ring-gray-800/30 rounded-xl p-5 my-4 backdrop-blur-xl transition-all duration-200">
+          <div className="text-sm text-gray-300 font-medium mb-4">{summarizeResults(results)}</div>
+          
+          <div className="flex flex-wrap gap-3 items-center">
+            <button
+              onClick={() => setShowJson((v) => !v)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-black/20 hover:bg-indigo-600/10 text-gray-300 hover:text-indigo-400 rounded-lg text-xs font-medium transition-all duration-200 ring-1 ring-gray-800/50"
+              type="button"
+            >
+              {showJson ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {showJson ? "Hide JSON" : "View JSON"}
+            </button>
 
-          <button
-            onClick={downloadJson}
-            className="inline-flex items-center gap-1 px-2 py-1 bg-gray-800 hover:bg-gray-900 text-white rounded text-sm font-medium transition-colors"
-            type="button"
-            title="Download JSON"
-          >
-            <Download className="w-3 h-3" />
-            Download JSON
-          </button>
-        </div>
-        {showJson && (
-          <div className="mt-3 bg-gray-900 rounded p-3 overflow-auto">
-            <pre className="text-xs text-gray-100 font-mono">{jsonText}</pre>
+            <button
+              onClick={copyJson}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-black/20 hover:bg-indigo-600/10 text-gray-300 hover:text-indigo-400 rounded-lg text-xs font-medium transition-all duration-200 ring-1 ring-gray-800/50"
+              type="button"
+              title="Copy JSON to clipboard"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              Copy JSON
+            </button>
+
+            <button
+              onClick={downloadJson}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-lg text-xs font-medium transition-all duration-200 ring-1 ring-indigo-500/20 hover:ring-indigo-500/30"
+              type="button"
+              title="Download JSON"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download JSON
+            </button>
           </div>
-        )}
+          
+          {showJson && (
+            <div className="mt-4 relative group">
+              <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/5 to-violet-600/5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+              <div className="relative bg-black/30 rounded-lg p-4 overflow-auto backdrop-blur-sm [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-gray-900/20 [&::-webkit-scrollbar-thumb]:bg-gray-700/30 [&::-webkit-scrollbar-thumb]:rounded-full ring-1 ring-gray-800/50">
+                <pre className="text-xs text-gray-300 font-mono leading-relaxed">{jsonText}</pre>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -159,8 +168,11 @@ export default function TableView({ results }: { results: unknown }) {
   const { columns, rows: filteredRows } = processedData;
   if (columns.length === 0) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-4 my-4 text-center">
-        <div className="text-gray-500 text-sm">No tabular data to display.</div>
+      <div className="relative group">
+        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/5 to-violet-600/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+        <div className="relative bg-[#0A0F16]/80 ring-1 ring-gray-800/30 rounded-xl p-8 my-4 text-center backdrop-blur-xl transition-all duration-200">
+          <div className="text-gray-400 text-sm font-medium">No tabular data to display.</div>
+        </div>
       </div>
     );
   }
@@ -199,122 +211,123 @@ export default function TableView({ results }: { results: unknown }) {
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm my-4">
-      {/* Header Controls */}
-      <div className="bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between rounded-t-lg">
-        <div className="flex items-center gap-4">
-          <div className="text-sm font-medium text-gray-900">
-            {effectiveRows.length} of {filteredRows.length} rows
-          </div>
-          {filteredRows.length !== (tableData?.rows?.length ?? 0) && (
-            <div className="text-xs text-gray-500">(filtered from {tableData?.rows?.length ?? 0} total)</div>
-          )}
-        </div>
+    <div className="relative group">
+      {/* Gradient hover effect */}
+      <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/5 to-violet-600/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-600">Rows:</label>
+      <div className="relative rounded-xl bg-[#0A0F16]/80 ring-1 ring-gray-800/30 backdrop-blur-xl my-6 mx-auto transition-all duration-200 text-[13px]">
+        {/* Controls */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800/30">
+          <div className="text-xs font-medium text-gray-300 tracking-wide">
+            <span className="text-white/90 font-semibold">{effectiveRows.length}</span>
+            <span className="mx-1 text-gray-500">/</span>
+            <span className="text-gray-400">{filteredRows.length} rows</span>
+          </div>
+          <div className="flex items-center gap-3">
             <div className="relative">
               <select
                 value={rowLimit}
                 onChange={(e) => setRowLimit(e.target.value === "all" ? "all" : Number(e.target.value))}
-                className="appearance-none bg-white border border-gray-200 rounded px-2 py-1 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-700"
+                className="appearance-none bg-black/20 ring-1 ring-gray-800/50 rounded-lg px-4 py-2 pr-8 text-xs font-medium text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all duration-200"
+                title="Rows per page"
               >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value={"all"}>All</option>
+                <option value={10}>10 rows</option>
+                <option value={25}>25 rows</option>
+                <option value={50}>50 rows</option>
+                <option value={100}>100 rows</option>
+                <option value={"all"}>All rows</option>
               </select>
-              <ChevronDown className="absolute right-1 top-1.5 h-3 w-3 text-gray-400 pointer-events-none" />
+              <ChevronDown className="absolute right-3 top-2.5 h-3.5 w-3.5 text-gray-500 pointer-events-none" />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={copyCsv}
+                className="p-2 rounded-lg hover:bg-indigo-600/10 transition-colors text-gray-400 hover:text-indigo-400 ring-1 ring-gray-800/50"
+                title="Copy CSV to clipboard"
+                aria-label="Copy CSV"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+              <button
+                onClick={downloadCsv}
+                className="p-2 rounded-lg hover:bg-indigo-600/10 transition-colors text-gray-400 hover:text-indigo-400 ring-1 ring-gray-800/50"
+                title="Download CSV"
+                aria-label="Download CSV"
+              >
+                <Download className="w-4 h-4" />
+              </button>
             </div>
           </div>
-
-          <button
-            onClick={copyCsv}
-            className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-gray-200 rounded text-xs text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <Copy className="w-3 h-3" />
-            Copy CSV
-          </button>
-
-          <button
-            onClick={downloadCsv}
-            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition-colors"
-          >
-            <Download className="w-3 h-3" />
-            Download CSV
-          </button>
         </div>
-      </div>
 
-      {/* Table */}
-      <div className="overflow-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-100">
-            <tr>
-              {columns.map((col: string) => (
-                <th
-                  key={col}
-                  className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200 last:border-r-0 whitespace-nowrap"
-                >
-                  <div className="truncate max-w-[200px]" title={col}>
-                    {col}
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {effectiveRows.map((row, i) => (
-              <tr key={i} className="hover:bg-gray-50 transition-colors">
-                {columns.map((col: string) => {
-                  const cell = row[col];
-                  let display = "";
-                  let isNumeric = false;
-
-                  if (cell === null || typeof cell === "undefined") {
-                    display = "";
-                  } else if (typeof cell === "number") {
-                    // show the raw numeric value exactly as returned from backend
-                    display = String(cell);
-                    isNumeric = true;
-                  } else if (typeof cell === "object") {
-                    try {
-                      display = JSON.stringify(cell);
-                    } catch {
-                      display = String(cell);
-                    }
-                  } else {
-                    display = String(cell);
-                    isNumeric = !isNaN(Number(display)) && display.trim() !== "";
-                  }
-
-                  return (
-                    <td
-                      key={col}
-                      className={`px-4 py-3 text-sm border-r border-gray-100 last:border-r-0 whitespace-nowrap ${
-                        isNumeric ? 'text-right font-medium text-gray-900' : 'text-left text-gray-700'
-                      }`}
-                    >
-                      <div className="truncate max-w-[200px]" title={display || 'null'}>
-                        {display || <span className="text-gray-400 italic text-xs">null</span>}
-                      </div>
-                    </td>
-                  );
-                })}
+        {/* Table with custom scrollbar */}
+        <div className="overflow-x-auto [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-gray-900/20 [&::-webkit-scrollbar-thumb]:bg-gray-700/30 [&::-webkit-scrollbar-thumb]:rounded-full">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 bg-[#0A0F16]/95 backdrop-blur-xl border-b border-gray-800/30">
+              <tr>
+                {columns.map((col: string) => (
+                  <th
+                    key={col}
+                    className="px-4 py-2.5 text-left font-medium text-indigo-400/90 whitespace-nowrap first:pl-4 last:pr-4"
+                  >
+                    <div className="truncate max-w-[180px]" title={col}>
+                      {col}
+                    </div>
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Footer */}
-      {filteredRows.length > effectiveRows.length && (
-        <div className="bg-gray-50 border-t border-gray-200 px-4 py-2 text-xs text-gray-600 rounded-b-lg">
-          Showing {effectiveRows.length} of {filteredRows.length} rows
+            </thead>
+            <tbody>
+              {effectiveRows.map((row, i) => (
+                <tr 
+                  key={i} 
+                  className="group/row border-b border-gray-800/30 last:border-0 hover:bg-indigo-600/5 transition-colors"
+                >
+                  {columns.map((col: string) => {
+                    const cell = row[col];
+                    let display = "";
+                    let isNumeric = false;
+                    if (cell === null || typeof cell === "undefined") {
+                      display = "";
+                    } else if (typeof cell === "number") {
+                      display = String(cell);
+                      isNumeric = true;
+                    } else if (typeof cell === "object") {
+                      try {
+                        display = JSON.stringify(cell);
+                      } catch {
+                        display = String(cell);
+                      }
+                    } else {
+                      display = String(cell);
+                      isNumeric = !isNaN(Number(display)) && display.trim() !== "";
+                    }
+                    return (
+                      <td
+                        key={col}
+                        className={`px-4 py-2.5 group-hover/row:text-gray-200 transition-colors first:pl-4 last:pr-4 ${
+                          isNumeric ? 'text-right font-medium text-gray-300' : 'text-left text-gray-400'
+                        }`}
+                      >
+                        <div className="truncate max-w-[180px]" title={display || 'null'}>
+                          {display || <span className="text-gray-500 italic text-xs">null</span>}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+
+        {/* Footer */}
+        {filteredRows.length > effectiveRows.length && (
+          <div className="px-6 py-3 text-xs text-gray-400 border-t border-gray-800/30">
+            Showing {effectiveRows.length} of {filteredRows.length} rows
+          </div>
+        )}
+      </div>
     </div>
   );
 }
