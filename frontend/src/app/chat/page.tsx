@@ -1,27 +1,22 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { createClient } from "@/utils/supabase/client";
 import ChatContainer from "@/components/chat/ChatContainer";
+import { useAuth } from "@/context/AuthContext";
+import { Button } from "@/components/ui/button";
 
 export default function ChatPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const { token, logout } = useAuth();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.replace("/");
-      } else {
-        setLoading(false);
-      }
-    };
-    checkUser();
-  }, [router, supabase.auth]);
+    if (!token) {
+      router.replace('/login');
+    } else {
+      setLoading(false);
+    }
+  }, [token, router]);
 
   if (loading) {
     return (
@@ -35,8 +30,22 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-screen overflow-hidden">
-      <ChatContainer />
+    <div className="h-screen overflow-hidden flex flex-col">
+      <div className="flex items-center justify-between px-4 py-2 border-b bg-white/70 backdrop-blur-sm">
+        <h1 className="text-sm font-semibold text-zinc-800">Chat</h1>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            logout();
+            router.push('/');
+          }}
+          className="text-xs"
+        >Logout</Button>
+      </div>
+      <div className="flex-1 min-h-0">
+        <ChatContainer />
+      </div>
     </div>
   );
 }

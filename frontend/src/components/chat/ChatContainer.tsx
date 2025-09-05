@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, createContext } from "react";
-import { getUserEmail } from "@/utils/supabase/getUserEmail";
+import { useAuth } from "@/context/AuthContext";
 import { Database, AlertTriangle } from "lucide-react";
 import ChatInput from "./ChatInput";
 import MessageList, { Message } from "./MessageList";
@@ -65,7 +65,8 @@ export const SessionContext = createContext<string | null>(null);
 
 export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const { user } = useAuth();
+  const userEmail = user?.email || null;
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [sessionState, setSessionState] = useState<SessionState>({
@@ -74,6 +75,7 @@ export default function ChatContainer() {
     messageCount: 0,
     awaitingConfirmation: false
   });
+  const { logout } = useAuth();
   
   // Phase 3: Persistent session ID with cleanup
   const [sessionId] = useState(() => {
@@ -322,14 +324,8 @@ export default function ChatContainer() {
     }
   };
 
-  // Fetch user email on mount (only set email here; don't overwrite messages)
+  // User email now derived from AuthContext; no async fetch needed
   useEffect(() => {
-    async function fetchEmail() {
-      const email = await getUserEmail();
-      setUserEmail(email);
-      // Do NOT set welcome message here to avoid overwriting persisted history loaded later
-    }
-    fetchEmail();
     updateActivity();
   }, [updateActivity]);
 
@@ -717,6 +713,22 @@ export default function ChatContainer() {
                aria-label="Clear chat history"
              >
                {clearing ? 'clearing...' : 'clear'}
+             </button>
+
+             {/* Logout Button */}
+             <button
+               type="button"
+               onClick={() => {
+                 logout();
+                 if (typeof window !== 'undefined') {
+                   window.location.href = '/';
+                 }
+               }}
+               className="text-xs hover:text-opacity-80 transition-colors duration-200 font-mono"
+               style={{ color: '#D3C3B9' }}
+               aria-label="Logout"
+             >
+               logout
              </button>
            </div>
         </div>

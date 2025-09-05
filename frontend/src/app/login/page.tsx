@@ -33,9 +33,9 @@ export default function LoginPage() {
       setAuthInfo(res.access_token, res.user);
       setMessage(`Login successful! Welcome ${res.user.email}`);
       
-      // Small delay to show success message
+      // Small delay to show success message then go to chat
       setTimeout(() => {
-        router.push("/dashboard");
+        router.push("/chat");
       }, 1000);
       
     } catch (err: unknown) {
