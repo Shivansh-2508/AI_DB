@@ -298,7 +298,13 @@ def ask():
     data = request.get_json(silent=True) or {}
     user_input = data.get('message', '').strip()
     session_id = data.get('session_id') or data.get('sessionId') or 'default'
+
     user_id = get_jwt_identity()
+    # Fetch user role from DB
+    user_info = execute_query("SELECT role FROM users WHERE user_id = %s", (user_id,))
+    user_role = None
+    if user_info and len(user_info) > 0:
+        user_role = user_info[0].get("role", None)
 
     if not user_input:
         return jsonify({"error": "Message is required."}), 400
@@ -316,9 +322,15 @@ def ask():
         remember(session_id, "assistant", clarifier)
         return jsonify({"clarifier": clarifier, "history": history}), 200
 
+
     sql_query = generate_sql_from_chat_history(history, schema)
 
+    # Restrict write queries to admin only
     if is_write_query(sql_query):
+        if user_role != "admin":
+            msg = "❌ Only admins are allowed to perform actions that modify the database (DELETE/UPDATE/INSERT). Please contact an administrator if you need this action."
+            remember(session_id, "assistant", msg)
+            return jsonify({"error": msg, "history": get_history(session_id)}), 403
         pending_queries[session_id] = {"sql": sql_query, "user_id": user_id}
         clarifier_msg = f"This query will modify data. Do you want me to run it?\n\n{sql_query}"
         remember(session_id, "assistant", clarifier_msg)
