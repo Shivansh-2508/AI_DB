@@ -88,8 +88,8 @@ export default function MessageBubble({
     let processed = text;
     // Only call replace when processed is a string
     if (typeof processed === 'string') {
-      processed = processed.replace(boldRegex, '<strong class="font-medium">$1</strong>');
-      processed = processed.replace(inlineCodeRegex, '<code class="px-2 py-1 rounded-md text-xs font-mono bg-black/30 text-indigo-400/90 ring-1 ring-indigo-500/20">$1</code>');
+      processed = processed.replace(boldRegex, '<strong class="font-medium text-gray-200">$1</strong>');
+      processed = processed.replace(inlineCodeRegex, '<code class="px-1.5 py-0.5 rounded text-xs font-mono bg-black/20 text-gray-300">$1</code>');
     }
     
     return <span key={key} dangerouslySetInnerHTML={{ __html: processed }} />;
@@ -97,15 +97,15 @@ export default function MessageBubble({
 
   return (
     <div
-      className={`relative group text-sm leading-relaxed whitespace-pre-wrap px-5 py-3 rounded-xl shadow-lg backdrop-blur-xl transition-all duration-200
+      className={`relative group text-sm leading-relaxed whitespace-pre-wrap px-4 py-2.5 rounded transition-colors
         ${isError 
           ? 'bg-red-500/10 ring-1 ring-red-500/20 text-red-200' 
           : isUser 
-            ? 'bg-[#0A0F16]/80 ring-1 ring-gray-800/30 text-gray-100 ml-auto hover:shadow-indigo-500/5' 
-            : 'bg-[#0A0F16]/80 ring-1 ring-gray-800/30 text-gray-100 hover:shadow-indigo-500/5'
+            ? 'bg-gray-800/50 text-gray-100' 
+            : 'bg-gray-800/30 text-gray-100'
         }
       `}
-      style={{ maxWidth: isUser ? '70%' : '80%', wordBreak: 'break-word' }}
+      style={{ maxWidth: '100%', wordBreak: 'break-word' }}
     >
       {/* Gradient hover effect */}
       <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/5 to-violet-600/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>

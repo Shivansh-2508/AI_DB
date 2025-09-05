@@ -34,8 +34,8 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-[#0A0F16]">
-      <div className="max-w-7xl mx-auto h-full">
+    <div className="min-h-screen overflow-hidden bg-[#0A0F16]">
+      <div className="h-screen">
         <ChatContainer />
       </div>
     </div>
