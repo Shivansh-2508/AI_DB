@@ -284,7 +284,7 @@ Task:
 Examples of clarifying questions:
   - "Which table should I use to fetch 'records'?"
   - "Do you mean all orders, or only recent ones?"
-  - "Should I include inactive users or only active ones?"
+  - "Should I include inactive private.users or only active ones?"
 
 Answer:
 """.strip()

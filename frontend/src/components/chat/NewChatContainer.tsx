@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback, createContext, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Database, AlertTriangle } from "lucide-react";
 import ChatInput from "./ChatInput";
@@ -17,7 +17,7 @@ interface ApiResponse {
   history?: Record<string, unknown>[];
 }
 
-// Backend message shape returned by GET /chat/:sessionId
+// Backend message shape returned by GET /chat/history
 interface BackendMessage {
   message_id?: string;
   messageId?: string;
@@ -61,7 +61,6 @@ function normalizeResults(data: ApiResponse): { columns: string[]; rows: Record<
   return undefined;
 }
 
-export const SessionContext = createContext<string | null>(null);
 
 export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -80,24 +79,7 @@ export default function ChatContainer() {
     return token ? { Authorization: `Bearer ${token}` } : {} as Record<string,string>;
   }, [token]);
   
-  // Phase 3: Persistent session ID with cleanup (scoped to user)
-  const sessionKey = userEmail ? `chat_session_id_${userEmail}` : "chat_session_id_anon";
-  const [sessionId] = useState(() => {
-    try {
-      const existing = localStorage.getItem(sessionKey);
-      if (existing) return existing;
-    } catch {
-      // localStorage might be unavailable in some environments (SSR/locked down)
-    }
-
-    const newId = (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2);
-
-    try { localStorage.setItem(sessionKey, newId); } catch { /* ignore */ }
-    console.log(`🔄 New session created for key ${sessionKey}: ${newId}`);
-    return newId;
-  });
+  // Chat is now user_id-based
 
   // Phase 3: Activity tracking and cleanup
   const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -132,7 +114,7 @@ export default function ChatContainer() {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/clear`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
-        body: JSON.stringify({ session_id: sessionId }),
+        // user_id handled by backend via JWT
       });
 
       const data = await res.json().catch(() => ({}));
@@ -177,7 +159,7 @@ export default function ChatContainer() {
       usedMessageIds.current.clear();
       messageIdCounterRef.current = 0;
 
-      console.log(`🧹 Chat history cleared for session: ${sessionId}`);
+  console.log(`🧹 Chat history cleared for user.`);
     } catch (err) {
       console.error('Failed to clear chat history', err);
       setMessages(prev => [
@@ -194,7 +176,7 @@ export default function ChatContainer() {
     } finally {
       setClearing(false);
     }
-  }, [sessionId, generateMessageId, authHeaders]);
+  }, [generateMessageId, authHeaders]);
 
   // Phase 3: Enhanced message management with types
   type MessageWithOptionalStructured = Omit<Message, "id" | "timestamp"> & { type?: "user" | "assistant" | "system" | "error", results?: unknown, sql?: string };
@@ -226,17 +208,14 @@ export default function ChatContainer() {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify({
-        email: userEmail,
-        sessionId: sessionId,
         messageId: newMessage.id,
         content: newMessage.text,
         role: msg.type || "assistant",
-        // include structured fields if present so persisted history contains full results
         results: msg.results ?? undefined,
         sql: msg.sql ?? undefined
       })
     }).catch(err => console.error("Failed to save message to backend", err));
-  }, [generateMessageId, sessionId, userEmail, authHeaders]);
+  }, [generateMessageId, authHeaders]);
 
   const updateActivity = useCallback(() => {
     // Only set isActive to true if not currently inactive
@@ -282,7 +261,6 @@ export default function ChatContainer() {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
-          session_id: sessionId,
           decision: decision
         }),
       });
@@ -340,7 +318,7 @@ export default function ChatContainer() {
 
     async function loadHistory() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/${sessionId}`, { headers: { ...authHeaders } });
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/history`, { headers: { ...authHeaders } });
         const data = await res.json();
         if (res.status === 401) {
           logout();
@@ -441,7 +419,7 @@ export default function ChatContainer() {
         setMessages(mapped);
         setSessionState(prev => ({ ...prev, messageCount: mapped.length }));
         persistedLoadedRef.current = true;
-        console.log(`✅ Loaded ${mapped.length} persisted messages for session ${sessionId}`);
+  console.log(`✅ Loaded ${mapped.length} persisted messages for user.`);
       } catch (err) {
         console.error("Failed to load persisted chat history:", err);
       }
@@ -452,7 +430,7 @@ export default function ChatContainer() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, generateMessageId, userEmail, authHeaders, logout]);
+  }, [generateMessageId, userEmail, authHeaders, logout]);
 
   // Prefetch schema
   useEffect(() => {
@@ -462,14 +440,10 @@ export default function ChatContainer() {
       setIsSchemaLoading(true);
       try {
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat`,
+          `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/schema`,
           {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...authHeaders },
-            body: JSON.stringify({ 
-              email: userEmail, 
-              session_id: sessionId 
-            }),
+            method: "GET",
+            headers: { ...authHeaders },
           }
         );
 
@@ -503,7 +477,7 @@ export default function ChatContainer() {
               newMsgs = [
                 {
                   id: `quick-tips-${Date.now()}`,
-                  text: `💡 **Quick tips:**\n• Try: \"show me the customers table\"\n• Ask: \"what tables are available?\"\n• Query: \"find orders from last week\"\n\n*Session ID: \`${sessionId}\`*`,
+                  text: `💡 **Quick tips:**\n• Try: \"show me the customers table\"\n• Ask: \"what tables are available?\"\n• Query: \"find orders from last week\"`,
                   isUser: false,
                   isError: false,
                   timestamp: new Date(),
@@ -534,7 +508,7 @@ export default function ChatContainer() {
     }
 
     prefetchSchema();
-  }, [userEmail, sessionId, addMessageWithActivity, authHeaders, logout]);
+  }, [userEmail, addMessageWithActivity, authHeaders, logout]);
 
   const sendToBackend = async (text: string) => {
     if (!sessionState.isActive) {
@@ -565,7 +539,7 @@ export default function ChatContainer() {
           headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({
             message: text,
-            session_id: sessionId,
+            // session_id removed; user_id handled by backend via JWT
             email: userEmail,
           }),
         }
@@ -750,15 +724,13 @@ export default function ChatContainer() {
       </div>
 
       {/* Messages Area */}
-      <SessionContext.Provider value={sessionId}>
-        <div className="flex-1 overflow-hidden relative">
-          <div className="absolute inset-0 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-700/30">
-            <div className="max-w-6xl mx-auto">
-              <MessageList messages={messages} isLoading={loading} />
-            </div>
+      <div className="flex-1 overflow-hidden relative">
+        <div className="absolute inset-0 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-700/30">
+          <div className="max-w-6xl mx-auto">
+            <MessageList messages={messages} isLoading={loading} />
           </div>
         </div>
-      </SessionContext.Provider>
+      </div>
 
       {/* Input Area with minimal styling */}
       <div className="flex-shrink-0 border-t border-gray-800/30 bg-[#0A0F16]">

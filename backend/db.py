@@ -32,17 +32,19 @@ def _json_default(o: Any) -> Any:
     return str(o)
 
 
-def save_message(session_id: str, message_id: Optional[str], content: Any, role: str, user_id: Optional[str] = None) -> None:
+def save_message(user_id: str, message_id: Optional[str], content: Any, role: str, session_id: Optional[str] = None) -> None:
     """
     Persist a chat message to Postgres.
 
-    Expects a table `chat_messages`:
-      session_id TEXT,
-      message_id TEXT UNIQUE,
-      content TEXT,
-      role TEXT,
-      timestamp TIMESTAMPTZ DEFAULT now()
+    Expects a table `private.chat_messages`:
+        session_id TEXT,
+        message_id TEXT UNIQUE NOT NULL,
+        content TEXT,
+        role TEXT,
+        user_id TEXT,
+        timestamp TIMESTAMPTZ DEFAULT now()
     """
+    import uuid
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -51,57 +53,46 @@ def save_message(session_id: str, message_id: Optional[str], content: Any, role:
             else:
                 content_to_store = content
 
-            if message_id:
-                cur.execute(
-                    """
-                    INSERT INTO chat_messages (session_id, message_id, content, role, user_id)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (message_id)
-                    DO UPDATE SET content = EXCLUDED.content, role = EXCLUDED.role, user_id = EXCLUDED.user_id
-                    """,
-                    (session_id, message_id, content_to_store, role, user_id),
-                )
-            else:
-                cur.execute(
-                    "INSERT INTO chat_messages (session_id, content, role, user_id) VALUES (%s, %s, %s, %s)",
-                    (session_id, content_to_store, role, user_id),
-                )
+            # Ensure message_id is always set
+            message_id = message_id or str(uuid.uuid4())
+
+            cur.execute(
+                """
+                INSERT INTO private.chat_messages (user_id, message_id, content, role, session_id)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (message_id)
+                DO UPDATE SET content = EXCLUDED.content,
+                              role = EXCLUDED.role,
+                              session_id = EXCLUDED.session_id
+                """,
+                (user_id, message_id, content_to_store, role, session_id),
+            )
         conn.commit()
     finally:
         conn.close()
 
 
-def get_chat_history(session_id: str, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_chat_history(user_id: str) -> List[Dict[str, Any]]:
     """Return chat history for a session and user."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            if user_id:
-                cur.execute(
-                    """
-                    SELECT message_id, content, role, timestamp
-                    FROM chat_messages
-                    WHERE session_id = %s AND user_id = %s
-                    ORDER BY timestamp ASC
-                    """,
-                    (session_id, user_id),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT message_id, content, role, timestamp
-                    FROM chat_messages
-                    WHERE session_id = %s
-                    ORDER BY timestamp ASC
-                    """,
-                    (session_id,),
-                )
+            cur.execute(
+                """
+                SELECT message_id, content, role, created_at
+                FROM private.chat_messages
+                WHERE user_id = %s
+                ORDER BY created_at ASC
+                """,
+                (user_id,),
+            )
             rows = cur.fetchall()
 
         parsed = []
-        for mid, raw_content, role, ts in rows:
+        for mid, raw_content, role, created_at in rows:
             try:
-                parsed_content = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+                parsed_content = json.loads(raw_content) if isinstance(
+                    raw_content, str) else raw_content
             except Exception:
                 parsed_content = raw_content
 
@@ -109,7 +100,7 @@ def get_chat_history(session_id: str, user_id: Optional[str] = None) -> List[Dic
                 "message_id": mid,
                 "content": parsed_content,
                 "role": role,
-                "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else ts,
+                "timestamp": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
             })
 
         return parsed
@@ -117,12 +108,13 @@ def get_chat_history(session_id: str, user_id: Optional[str] = None) -> List[Dic
         conn.close()
 
 
-def clear_chat_session(session_id: str) -> None:
-    """Delete all messages for a session."""
+def clear_chat_history(user_id: str) -> None:
+    """Delete all messages for a given user."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM chat_messages WHERE session_id = %s", (session_id,))
+            cur.execute(
+                "DELETE FROM private.chat_messages WHERE user_id = %s", (user_id,))
         conn.commit()
     finally:
         conn.close()
@@ -130,7 +122,8 @@ def clear_chat_session(session_id: str) -> None:
 
 def is_write_query(query: str) -> bool:
     """Detect queries that modify DB state."""
-    keywords = {"INSERT", "UPDATE", "DELETE", "TRUNCATE", "ALTER", "DROP", "CREATE"}
+    keywords = {"INSERT", "UPDATE", "DELETE",
+                "TRUNCATE", "ALTER", "DROP", "CREATE"}
     return any(kw in query.upper() for kw in keywords)
 
 
@@ -149,7 +142,8 @@ def fetch_schema_info(schema_name: str = "public") -> Dict[str, Any]:
             tables = [row[0] for row in cur.fetchall()]
 
             for table in tables:
-                table_info = {"columns": [], "primary_key": [], "foreign_keys": []}
+                table_info = {"columns": [],
+                              "primary_key": [], "foreign_keys": []}
 
                 # Columns
                 cur.execute(
@@ -160,7 +154,8 @@ def fetch_schema_info(schema_name: str = "public") -> Dict[str, Any]:
                     """,
                     (schema_name, table),
                 )
-                table_info["columns"] = [{"name": c, "type": t} for c, t in cur.fetchall()]
+                table_info["columns"] = [{"name": c, "type": t}
+                                         for c, t in cur.fetchall()]
 
                 # PKs
                 cur.execute(

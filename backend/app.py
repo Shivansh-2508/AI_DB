@@ -20,7 +20,7 @@ from db import (
     get_cached_schema,
     save_message,
     get_chat_history,
-    clear_chat_session,
+    clear_chat_history,
 )
 from nlp_to_sql import (
     generate_sql_from_chat_history,
@@ -35,7 +35,7 @@ from nlp_to_sql import (
 
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, origins=["http://localhost:3000"], supports_credentials=True)
 bcrypt = Bcrypt(app)
 
 app.config["JWT_SECRET_KEY"] = "super-secret-key"  # TODO: set via env var
@@ -94,13 +94,13 @@ def signup():
         return jsonify({"error": "email and password required"}), 400
 
     existing = execute_query(
-        "SELECT user_id FROM users WHERE email = %s", (email,))
+        "SELECT user_id FROM private.users WHERE email = %s", (email,))
     if existing and len(existing.get("rows", [])) > 0:
         return jsonify({"error": "Email already in use"}), 400
 
     hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
     execute_query(
-        "INSERT INTO users (email, hashed_pw, role) VALUES (%s, %s, %s)",
+        "INSERT INTO private.users (email, hashed_pw, role) VALUES (%s, %s, %s)",
         (email, hashed_pw, "user")
     )
 
@@ -121,7 +121,7 @@ def login():
             return jsonify({"error": "email and password required"}), 400
 
         user = execute_query(
-            "SELECT user_id, hashed_pw, role FROM users WHERE email = %s",
+            "SELECT user_id, hashed_pw, role FROM private.users WHERE email = %s",
             (email,)
         )
 
@@ -194,23 +194,16 @@ app.register_blueprint(api_bp)
 
 # -------------------- In-memory chat history (MVP) --------------------
 
-chat_history = {}
 last_results_cache = {}
 pending_queries = {}
 
 
-def remember(session_id: str, role: str, content: object, message_id: str | None = None) -> None:
-    try:
-        # Try to get user_id from Flask context if available
-        from flask_jwt_extended import get_jwt_identity
-        try:
-            user_id = get_jwt_identity()
-        except Exception:
-            user_id = None
-        save_message(session_id, message_id, content, role, user_id)
-    except Exception:
-        chat_history.setdefault(session_id, []).append(
-            {"role": role, "content": content})
+def remember(user_id: str, role: str, content: object, message_id: str | None = None) -> None:
+    import uuid
+    if not message_id:
+        message_id = str(uuid.uuid4())
+    # Always pass a non-null session_id (use user_id as fallback)
+    save_message(user_id, message_id, content, role, session_id=user_id)
 
 
 def normalize_history(raw_history):
@@ -235,22 +228,13 @@ def normalize_history(raw_history):
     return normalized
 
 
-def get_history(session_id: str, user_id: str = None):
-    try:
-        raw = get_chat_history(session_id, user_id)
-        return normalize_history(raw)
-    except Exception:
-        # fallback for in-memory (MVP/testing)
-        if user_id:
-            return normalize_history([msg for msg in chat_history.get(session_id, []) if msg.get('user_id') == user_id])
-        return normalize_history(chat_history.get(session_id, []))
+def get_history(user_id: str):
+    raw = get_chat_history(user_id)
+    return normalize_history(raw)
 
 
-def clear_history(session_id: str) -> None:
-    try:
-        clear_chat_session(session_id)
-    except Exception:
-        chat_history.pop(session_id, None)
+def clear_history(user_id: str) -> None:
+    clear_chat_history(user_id)
 
 
 def cache_user_schema(user_id, schema_name="public"):
@@ -258,17 +242,28 @@ def cache_user_schema(user_id, schema_name="public"):
 
 # -------------------- Chat Routes --------------------
 
+# -------------------- Schema Prefetch Endpoint --------------------
+
+
+@app.route('/chat/schema', methods=['GET'])
+@jwt_required()
+def chat_schema():
+    user_id = get_jwt_identity()
+    try:
+        schema = get_cached_schema(user_id)
+        if not schema:
+            schema = cache_user_schema(user_id)
+        return jsonify({"schema_summary": schema}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/chat', methods=['POST', 'PUT'])
 @jwt_required()
 def chat_handler():
     data = request.get_json(silent=True) or {}
 
-    # Always trust JWT for user identity
-    jwt_user_id = get_jwt_identity()
-    user_id = jwt_user_id
-    session_id = data.get('sessionId') or data.get('session_id') or 'default'
-
+    user_id = get_jwt_identity()
     message_id = data.get('messageId') or data.get(
         'message_id') or data.get('id')
     content = data.get('content') or data.get('text') or data.get('message')
@@ -276,8 +271,8 @@ def chat_handler():
 
     if content:
         try:
-            save_message(session_id, message_id, content, role, user_id)
-            return jsonify({"message": "saved", "history": get_history(session_id, user_id)}), 200
+            remember(user_id, role, content, message_id)
+            return jsonify({"message": "saved", "history": get_history(user_id)}), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -288,12 +283,10 @@ def chat_handler():
     if not schema:
         schema = cache_user_schema(user_id)
 
-    _ = get_history(session_id)
-
     return jsonify({
         "message": "Schema cached and ready",
         "schema_summary": schema,
-        "history": get_history(session_id),
+        "history": get_history(user_id),
     }), 200
 
 # -------------------- Ask (NL → SQL) --------------------
@@ -304,11 +297,11 @@ def chat_handler():
 def ask():
     data = request.get_json(silent=True) or {}
     user_input = data.get('message', '').strip()
-    session_id = data.get('session_id') or data.get('sessionId') or 'default'
 
     user_id = get_jwt_identity()
     # Fetch user role from DB
-    user_info = execute_query("SELECT role FROM users WHERE user_id = %s", (user_id,))
+    user_info = execute_query(
+        "SELECT role FROM private.users WHERE user_id = %s", (user_id,))
     user_role = None
     if user_info and len(user_info) > 0:
         user_role = user_info[0].get("role", None)
@@ -322,13 +315,12 @@ def ask():
     if not schema:
         return jsonify({"error": "Schema not cached. Please refresh or re-login to cache your schema before chatting."}), 400
 
-    remember(session_id, "user", user_input)
-    history = get_history(session_id)
+    remember(user_id, "user", user_input)
+    history = get_history(user_id)
     clarifier = maybe_generate_clarifier(user_input, schema, history)
     if clarifier:
-        remember(session_id, "assistant", clarifier)
+        remember(user_id, "assistant", clarifier)
         return jsonify({"clarifier": clarifier, "history": history}), 200
-
 
     sql_query = generate_sql_from_chat_history(history, schema)
 
@@ -336,12 +328,12 @@ def ask():
     if is_write_query(sql_query):
         if user_role != "admin":
             msg = "❌ Only admins are allowed to perform actions that modify the database (DELETE/UPDATE/INSERT). Please contact an administrator if you need this action."
-            remember(session_id, "assistant", msg)
-            return jsonify({"error": msg, "history": get_history(session_id)}), 403
-        pending_queries[session_id] = {"sql": sql_query, "user_id": user_id}
+            remember(user_id, "assistant", msg)
+            return jsonify({"error": msg, "history": get_history(user_id)}), 403
+        pending_queries[user_id] = {"sql": sql_query, "user_id": user_id}
         clarifier_msg = f"This query will modify data. Do you want me to run it?\n\n{sql_query}"
-        remember(session_id, "assistant", clarifier_msg)
-        return jsonify({"clarifier": clarifier_msg, "history": get_history(session_id)}), 200
+        remember(user_id, "assistant", clarifier_msg)
+        return jsonify({"clarifier": clarifier_msg, "history": get_history(user_id)}), 200
 
     try:
         results_raw = execute_query(sql_query)
@@ -353,17 +345,17 @@ def ask():
             rows = results_raw
 
         if cols and rows:
-            last_results_cache[session_id] = {"columns": cols, "rows": rows}
-            cache_ai_table(session_id, cols, rows)
+            last_results_cache[user_id] = {"columns": cols, "rows": rows}
+            cache_ai_table(user_id, cols, rows)
             chartable, chart_type = detect_chartable(cols, rows)
             if chartable:
                 chart_prompt = "Do you want me to generate a chart for the above table?"
-                remember(session_id, "assistant", chart_prompt)
+                remember(user_id, "assistant", chart_prompt)
 
-        remember(session_id, "assistant", f"Generated SQL:\n{sql_query}")
+        remember(user_id, "assistant", f"Generated SQL:\n{sql_query}")
         result_payload = {"type": "results",
                           "sql": sql_query, "columns": cols, "rows": rows}
-        remember(session_id, "assistant", result_payload)
+        remember(user_id, "assistant", result_payload)
 
         return jsonify({
             "sql": sql_query,
@@ -371,14 +363,14 @@ def ask():
             "columns": cols,
             "chartable": chartable if 'chartable' in locals() else False,
             "chart_type": chart_type if 'chart_type' in locals() else None,
-            "history": get_history(session_id)
+            "history": get_history(user_id)
         }), 200
     except Exception as e:
-        friendly_error = rewrite_db_error(str(e), get_history(session_id))
-        remember(session_id, "assistant", f"❌ {friendly_error}")
-        suggestions = suggest_next_commands(schema, get_history(session_id))
-        remember(session_id, "assistant", f"💡 You can try:\n{suggestions}")
-        return jsonify({"error": friendly_error, "sql": sql_query, "suggestions": suggestions, "history": get_history(session_id)}), 500
+        friendly_error = rewrite_db_error(str(e), get_history(user_id))
+        remember(user_id, "assistant", f"❌ {friendly_error}")
+        suggestions = suggest_next_commands(schema, get_history(user_id))
+        remember(user_id, "assistant", f"💡 You can try:\n{suggestions}")
+        return jsonify({"error": friendly_error, "sql": sql_query, "suggestions": suggestions, "history": get_history(user_id)}), 500
 
 # -------------------- Confirm & Cancel --------------------
 
@@ -503,33 +495,23 @@ def generate_chart():
 # -------------------- Chat Helpers --------------------
 
 
-@app.route('/chat/<session_id>', methods=['GET'])
+# @app.route('/chat/<session_id>', methods=['GET'])
+# @jwt_required()
+# def get_chat(session_id):
+#     user_id = get_jwt_identity()
+#     try:
+#         history = get_history(user_id)
+#         return jsonify({"history": history}), 200
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+
+@app.route('/chat/history', methods=['GET'])
 @jwt_required()
-def get_chat(session_id):
+def get_chat_history_route():
     user_id = get_jwt_identity()
     try:
-        history = get_history(session_id, user_id)
+        history = get_history(user_id)
         return jsonify({"history": history}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/chat', methods=['PUT'])
-@jwt_required()
-def save_chat_message():
-    data = request.get_json(silent=True) or {}
-    user_id = get_jwt_identity()
-    session_id = data.get('session_id') or data.get('sessionId') or 'default'
-    message_id = data.get('message_id') or data.get('messageId')
-    text = data.get('text') or data.get('content') or data.get('message')
-    role = data.get('type') or data.get('role') or 'assistant'
-
-    if not text:
-        return jsonify({"error": "text (message) is required"}), 400
-
-    try:
-        save_message(session_id, message_id, text, role, user_id)
-        return jsonify({"message": "saved", "history": get_history(session_id, user_id)}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -537,10 +519,39 @@ def save_chat_message():
 @app.route('/chat/clear', methods=['POST'])
 @jwt_required()
 def chat_clear():
-    data = request.get_json(silent=True) or {}
-    session_id = data.get('sessionId') or data.get('session_id') or 'default'
-    clear_history(session_id)
-    return jsonify({"message": f"history cleared for {session_id}"}), 200
+    user_id = get_jwt_identity()
+    clear_history(user_id)
+    return jsonify({"message": f"history cleared for user {user_id}"}), 200
+
+
+# @app.route('/chat', methods=['PUT'])
+# @jwt_required()
+# def save_private.chat_messages():
+#     data = request.get_json(silent=True) or {}
+#     user_id = get_jwt_identity()
+#     session_id = data.get('session_id') or data.get('sessionId') or 'default'
+#     message_id = data.get('message_id') or data.get('messageId')
+#     text = data.get('text') or data.get('content') or data.get('message')
+#     role = data.get('type') or data.get('role') or 'assistant'
+
+#     if not text:
+#         return jsonify({"error": "text (message) is required"}), 400
+
+#     try:
+#         save_message(session_id, message_id, text, role, user_id)
+#         return jsonify({"message": "saved", "history": get_history(user_id)}), 200
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+
+
+# @app.route('/chat/clear', methods=['POST'])
+# @jwt_required()
+# def chat_clear():
+#     data = request.get_json(silent=True) or {}
+#     session_id = data.get('sessionId') or data.get('session_id') or 'default'
+#     clear_history(session_id)
+#     return jsonify({"message": f"history cleared for {session_id}"}), 200
+
 
 # -------------------- Health --------------------
 

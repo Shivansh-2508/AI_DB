@@ -61,7 +61,7 @@ function normalizeResults(data: ApiResponse): { columns: string[]; rows: Record<
   return undefined;
 }
 
-export const SessionContext = createContext<string | null>(null);
+// SessionContext removed: no longer needed for user-based chat
 
 export default function ChatContainer() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -69,7 +69,6 @@ export default function ChatContainer() {
   const userEmail = user?.email || null;
   const [loading, setLoading] = useState(false);
   const [isSchemaLoading, setIsSchemaLoading] = useState(true);
-  // ...existing code...
   const [sessionState, setSessionState] = useState<SessionState>({
     isActive: true,
     lastActivity: new Date(),
@@ -79,25 +78,6 @@ export default function ChatContainer() {
   const authHeaders = useMemo<Record<string,string>>(() => {
     return token ? { Authorization: `Bearer ${token}` } : {} as Record<string,string>;
   }, [token]);
-  
-  // Phase 3: Persistent session ID with cleanup (scoped to user)
-  const sessionKey = userEmail ? `chat_session_id_${userEmail}` : "chat_session_id_anon";
-  const [sessionId] = useState(() => {
-    try {
-      const existing = localStorage.getItem(sessionKey);
-      if (existing) return existing;
-    } catch {
-      // localStorage might be unavailable in some environments (SSR/locked down)
-    }
-
-    const newId = (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2);
-
-    try { localStorage.setItem(sessionKey, newId); } catch { /* ignore */ }
-    console.log(`🔄 New session created for key ${sessionKey}: ${newId}`);
-    return newId;
-  });
 
   // Phase 3: Activity tracking and cleanup
   const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -127,12 +107,10 @@ export default function ChatContainer() {
 
   // Phase 3: Clear chat history
   const clearChatHistory = useCallback(async () => {
-  // ...existing code...
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/clear`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
-        body: JSON.stringify({ session_id: sessionId }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -140,7 +118,6 @@ export default function ChatContainer() {
       if (!res.ok) {
         const msg = data && data.error ? data.error : 'Failed to clear chat on server';
         console.error(msg);
-        // show transient error message in chat using state update
         setMessages(prev => [
           {
             id: generateMessageId(),
@@ -155,7 +132,6 @@ export default function ChatContainer() {
         return;
       }
 
-      // Successful clear: update local state with a single system message
       const sysMsg: Message = {
         id: generateMessageId(),
         text: '🧹 Chat history cleared.',
@@ -173,11 +149,10 @@ export default function ChatContainer() {
         pendingWrite: undefined 
       }));
 
-      // Reset message ID tracking
       usedMessageIds.current.clear();
       messageIdCounterRef.current = 0;
 
-      console.log(`🧹 Chat history cleared for session: ${sessionId}`);
+      console.log(`🧹 Chat history cleared for user.`);
     } catch (err) {
       console.error('Failed to clear chat history', err);
       setMessages(prev => [
@@ -191,10 +166,8 @@ export default function ChatContainer() {
         },
         ...prev
       ]);
-    } finally {
-  // ...existing code...
     }
-  }, [sessionId, generateMessageId, authHeaders]);
+  }, [generateMessageId, authHeaders]);
 
   // Phase 3: Enhanced message management with types
   type MessageWithOptionalStructured = Omit<Message, "id" | "timestamp"> & { type?: "user" | "assistant" | "system" | "error", results?: unknown, sql?: string };
@@ -226,17 +199,15 @@ export default function ChatContainer() {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify({
-        email: userEmail,
-        sessionId: sessionId,
         messageId: newMessage.id,
         content: newMessage.text,
         role: msg.type || "assistant",
-        // include structured fields if present so persisted history contains full results
         results: msg.results ?? undefined,
         sql: msg.sql ?? undefined
+        // If backend requires user_id, add: user_id: user?.id
       })
     }).catch(err => console.error("Failed to save message to backend", err));
-  }, [generateMessageId, sessionId, userEmail, authHeaders]);
+  }, [generateMessageId, userEmail, authHeaders]);
 
   const updateActivity = useCallback(() => {
     // Only set isActive to true if not currently inactive
@@ -282,7 +253,7 @@ export default function ChatContainer() {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
-          session_id: sessionId,
+          // session_id removed: user_id is handled by backend via JWT
           decision: decision
         }),
       });
@@ -340,7 +311,7 @@ export default function ChatContainer() {
 
     async function loadHistory() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/${sessionId}`, { headers: { ...authHeaders } });
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/history`, { headers: { ...authHeaders } });
         const data = await res.json();
         if (res.status === 401) {
           logout();
@@ -441,7 +412,7 @@ export default function ChatContainer() {
         setMessages(mapped);
         setSessionState(prev => ({ ...prev, messageCount: mapped.length }));
         persistedLoadedRef.current = true;
-        console.log(`✅ Loaded ${mapped.length} persisted messages for session ${sessionId}`);
+        console.log(`✅ Loaded ${mapped.length} persisted messages for user.`);
       } catch (err) {
         console.error("Failed to load persisted chat history:", err);
       }
@@ -452,7 +423,7 @@ export default function ChatContainer() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, generateMessageId, userEmail, authHeaders, logout]);
+  }, [generateMessageId, userEmail, authHeaders, logout]);
 
   // Prefetch schema
   useEffect(() => {
@@ -461,15 +432,12 @@ export default function ChatContainer() {
     async function prefetchSchema() {
       setIsSchemaLoading(true);
       try {
+        // Use dedicated endpoint for schema prefetch
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat`,
+          `${process.env.NEXT_PUBLIC_API_BASE ?? ""}/chat/schema`,
           {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...authHeaders },
-            body: JSON.stringify({ 
-              email: userEmail, 
-              session_id: sessionId 
-            }),
+            method: "GET",
+            headers: { ...authHeaders },
           }
         );
 
@@ -485,7 +453,7 @@ export default function ChatContainer() {
             type: "system"
           });
           addMessageWithActivity({
-            text: `💡 **Quick tips:**\n• Try: "show me the customers table"\n• Ask: "what tables are available?"\n• Query: "find orders from last week"\n\n*Session ID: \`${sessionId}\`*`,
+            text: `💡 **Quick tips:**\n• Try: "show me the customers table"\n• Ask: "what tables are available?"\n• Query: "find orders from last week"`,
             type: "system"
           });
           setIsSchemaLoading(false);
@@ -495,7 +463,6 @@ export default function ChatContainer() {
             text: "⚠️ Failed to prefetch schema. Queries may not work correctly.",
             type: "error"
           });
-          // keep loading true if schema is not available
         }
       } catch {
         console.error("Prefetch error");
@@ -503,12 +470,11 @@ export default function ChatContainer() {
           text: "⚠️ Schema prefetch request failed.",
           type: "error"
         });
-        // keep loading true if schema is not available
       }
     }
 
     prefetchSchema();
-  }, [userEmail, sessionId, addMessageWithActivity, authHeaders, logout]);
+  }, [userEmail, addMessageWithActivity, authHeaders, logout]);
 
   const sendToBackend = async (text: string) => {
     if (!sessionState.isActive) {
@@ -538,9 +504,7 @@ export default function ChatContainer() {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({
-            message: text,
-            session_id: sessionId,
-            email: userEmail,
+            message: text
           }),
         }
       );
@@ -652,17 +616,15 @@ export default function ChatContainer() {
         {/* Messages Area with gradient background */}
         <div className="flex-1 min-h-[600px] bg-gradient-to-b from-[#0F1A1C] to-[#0A1112] overflow-hidden">
           <div className="h-full relative">
-            <SessionContext.Provider value={sessionId}>
-              <div className="absolute inset-0">
-                <MessageList messages={messages} isLoading={loading || isSchemaLoading} schemaLoading={isSchemaLoading} />
-              </div>
-            </SessionContext.Provider>
+            <div className="absolute inset-0">
+              <MessageList messages={messages} isLoading={loading || isSchemaLoading} schemaLoading={isSchemaLoading} />
+            </div>
           </div>
         </div>
 
         {/* Input Area - Fixed at bottom with blur effect */}
         <div className="flex-shrink-0 border-t border-gray-800/40 bg-[#0F1A1C]/80 backdrop-blur-xl">
-    <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="max-w-6xl mx-auto px-4 py-6">
             <ChatInput
               onSend={handleUserInput}
               disabled={loading || isSchemaLoading}
@@ -675,4 +637,4 @@ export default function ChatContainer() {
       </div>
     </div>
   );
-  }
+}

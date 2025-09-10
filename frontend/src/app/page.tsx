@@ -272,7 +272,7 @@ export default function Home() {
                 ]
               },
               {
-                title: "Business Users",
+                title: "Business private.users",
                 icon: "👔",
                 points: [
                   "Access data without technical SQL knowledge",

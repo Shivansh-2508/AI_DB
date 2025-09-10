@@ -1,11 +1,10 @@
 "use client";
-import { useEffect, useRef, useState, useContext } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, Database, Bot, User } from "lucide-react";
 
 import MessageBubble, { MessageBubbleProps } from "./MessageBubble";
 import TableView from "./TableView";
 import ChartRenderer, { ChartConfig } from "./ChartRenderer";
-import { SessionContext } from "./ChatContainer";
 import { useAuth } from "@/context/AuthContext";
 
 export interface TableResult {
@@ -29,7 +28,7 @@ export interface MessageListProps {
 }
 
 export default function MessageList({ messages, isLoading, schemaLoading }: MessageListProps) {
-  const sessionId = useContext(SessionContext);
+  // SessionContext removed; chat is now user_id-based
   const bottomRef = useRef<HTMLDivElement>(null);
   const { token, logout } = useAuth();
   const authHeaders: Record<string,string> = token ? { Authorization: `Bearer ${token}` } : {};
@@ -90,7 +89,7 @@ export default function MessageList({ messages, isLoading, schemaLoading }: Mess
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
-          session_id: sessionId,
+          // session_id removed; user_id handled by backend via JWT
           table: { columns, rows },
           chart: chartConfig
         })
