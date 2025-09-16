@@ -122,8 +122,10 @@ def clear_chat_history(user_id: str) -> None:
 
 def is_write_query(query: str) -> bool:
     """Detect queries that modify DB state."""
-    keywords = {"INSERT", "UPDATE", "DELETE",
-                "TRUNCATE", "ALTER", "DROP", "CREATE"}
+    keywords = {
+        "INSERT", "UPDATE", "DELETE", "TRUNCATE", "ALTER", "DROP", "CREATE",
+        "GRANT", "REVOKE", "EXECUTE", "CALL", "MERGE"
+    }
     return any(kw in query.upper() for kw in keywords)
 
 
@@ -217,29 +219,25 @@ def get_cached_schema(user_id: str) -> Optional[Dict[str, Any]]:
 def execute_query(query, params=None, schema=None):
     """
     Execute SQL safely.
-    SELECT returns list of dicts.
+    SELECT returns {columns: [...], rows: [...] }.
     Writes return {"rows_affected": N}.
     """
     if not query or query.lower().startswith("error:"):
         raise ValueError(f"Invalid SQL: {query}")
 
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
         if schema:
             cur.execute(f"SET search_path TO {schema}, public;")
 
-        if params:
-            cur.execute(query, params)
-        else:
-            cur.execute(query)
+        cur.execute(query, params or ())
 
         if cur.description:  # SELECT query
-            desc = [col[0] for col in cur.description]
             rows = cur.fetchall()
-            dict_rows = [dict(zip(desc, row)) for row in rows]
-            return dict_rows
+            columns = [desc.name for desc in cur.description]
+            return {"columns": columns, "rows": rows}
         else:
             conn.commit()
             return {"rows_affected": cur.rowcount}

@@ -2,24 +2,27 @@ import os
 import google.generativeai as genai
 from dotenv import load_dotenv
 import re
+import json
+from typing import Optional, Tuple
 
-ai_table_cache = {}
+# (Removed old AI table cache; no longer used in privacy-preserving flow)
 
-def cache_ai_table(session_id, columns, rows):
-    if columns and rows:
-        ai_table_cache[session_id] = {"columns": columns, "rows": rows}
-
-def get_cached_ai_table(session_id):
-    return ai_table_cache.get(session_id)
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-genai.configure(api_key=GOOGLE_API_KEY)
-model = genai.GenerativeModel('models/gemini-2.0-flash-001')
+try:
+    genai.configure(api_key=GOOGLE_API_KEY)  # type: ignore[attr-defined]
+    _GM = getattr(genai, "GenerativeModel", None)
+    model = _GM('models/gemini-2.0-flash-001') if _GM else None
+except Exception:
+    # Fallback: model will be referenced later and raise if used without proper config
+    model = None
 
 # ----------------------------------------------------
 # FILTER HELPER
 # ----------------------------------------------------
+
+
 def filter_history_for_llm(chat_history):
     """
     Remove assistant 'results'-style JSON objects and huge/JSON-like strings
@@ -47,6 +50,7 @@ def filter_history_for_llm(chat_history):
     return filtered
 # ----------------------------------------------------
 
+
 def format_schema(schema: dict) -> str:
     if not schema or not isinstance(schema, dict):
         return ""
@@ -57,7 +61,8 @@ def format_schema(schema: dict) -> str:
             cols_parts = []
             for col in info["columns"]:
                 if isinstance(col, dict):
-                    cols_parts.append(f"{col.get('name')} ({col.get('type', '?')})")
+                    cols_parts.append(
+                        f"{col.get('name')} ({col.get('type', '?')})")
                 else:
                     cols_parts.append(str(col))
             lines.append(" Columns: " + ", ".join(cols_parts))
@@ -73,10 +78,12 @@ def format_schema(schema: dict) -> str:
         out.append("\n".join(lines))
     return "\n\n".join(out)
 
+
 def _strip_markdown_fences(text: str) -> str:
     if not text:
         return ""
-    fenced = re.findall(r"```(?:sql)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
+    fenced = re.findall(
+        r"```(?:sql)?\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
     if fenced:
         text = fenced[0]
     text = re.sub(r"```+", "", text)
@@ -84,8 +91,9 @@ def _strip_markdown_fences(text: str) -> str:
         text = text.split(":", 1)[1]
     return text.strip()
 
+
 def generate_sql_from_prompt(user_question, schema=None):
-    schema_str = format_schema(schema)
+    schema_str = format_schema(schema or {})
     prompt = f"""
 You are an expert SQL assistant.
 Translate the following natural language question into a single valid PostgreSQL SQL query.
@@ -105,11 +113,14 @@ SQL:
     print("===========================================\n")
 
     try:
+        if model is None:
+            raise RuntimeError("LLM model not configured")
         response = model.generate_content(prompt)
         sql = _strip_markdown_fences((response.text or "").strip())
         return sql
     except Exception as e:
         return f"Error: {str(e)}"
+
 
 def _find_table_in_history(schema, chat_history):
     if not schema or not isinstance(schema, dict) or not chat_history:
@@ -122,11 +133,13 @@ def _find_table_in_history(schema, chat_history):
                 return t
     return None
 
+
 def _is_show_tables_intent(text: str) -> bool:
     if not text:
         return False
     t = text.lower()
     return any(kw in t for kw in ["show me all tables", "show tables", "list tables", "what tables"])
+
 
 def _is_write_intent(text: str) -> bool:
     if not text:
@@ -134,10 +147,11 @@ def _is_write_intent(text: str) -> bool:
     t = text.lower()
     return any(kw in t for kw in ["add ", "insert ", "create ", "update ", "delete ", "remove ", "add:"])
 
+
 def generate_sql_from_chat_history(chat_history, schema):
     # Use filtered history
     filtered_history = filter_history_for_llm(chat_history)
-    schema_str = format_schema(schema)
+    schema_str = format_schema(schema or {})
 
     # Find latest user question
     last_user = None
@@ -146,7 +160,8 @@ def generate_sql_from_chat_history(chat_history, schema):
             last_user = entry.get("content") or entry.get("text")
             break
     if not last_user and filtered_history:
-        last_user = (filtered_history or [])[-1].get("content") or (filtered_history or [])[-1].get("text")
+        last_user = (filtered_history or [
+        ])[-1].get("content") or (filtered_history or [])[-1].get("text")
 
     # Build context string
     chat_context = []
@@ -191,6 +206,8 @@ that lists table names (e.g. SELECT table_name FROM information_schema.tables WH
     print("===========================================================\n")
 
     try:
+        if model is None:
+            raise RuntimeError("LLM model not configured")
         res = model.generate_content(prompt)
         sql = _strip_markdown_fences((res.text or "").strip())
         # Sanity check
@@ -206,12 +223,15 @@ that lists table names (e.g. SELECT table_name FROM information_schema.tables WH
                             schema_tokens.add(str(c).lower())
             sql_lc = sql.lower()
             if not any(tok for tok in schema_tokens if tok and tok in sql_lc):
-                inferred_table = _find_table_in_history(schema, filtered_history or [])
+                inferred_table = _find_table_in_history(
+                    schema, filtered_history or [])
                 if inferred_table:
-                    retry_prompt = prompt + f"\n\nHint: Use table {inferred_table} when generating SQL."
+                    retry_prompt = prompt + \
+                        f"\n\nHint: Use table {inferred_table} when generating SQL."
                     try:
                         retry_res = model.generate_content(retry_prompt)
-                        retry_sql = _strip_markdown_fences((retry_res.text or "").strip())
+                        retry_sql = _strip_markdown_fences(
+                            (retry_res.text or "").strip())
                         if any(tok for tok in schema_tokens if tok and tok in retry_sql.lower()):
                             return retry_sql
                     except Exception:
@@ -221,8 +241,9 @@ that lists table names (e.g. SELECT table_name FROM information_schema.tables WH
     except Exception as e:
         return f"Error: {str(e)}"
 
+
 def maybe_generate_clarifier(user_question, schema, chat_history=None):
-    schema_str = format_schema(schema)
+    schema_str = format_schema(schema or {})
     # Use filtered history
     filtered_history = filter_history_for_llm(chat_history or [])
 
@@ -257,6 +278,8 @@ Answer:
     print("=============================================\n")
 
     try:
+        if model is None:
+            raise RuntimeError("LLM model not configured")
         res = model.generate_content(prompt)
         text = (res.text or "").strip()
         if text.upper().startswith("CLEAR"):
@@ -264,6 +287,7 @@ Answer:
         return text
     except Exception:
         return None
+
 
 def rewrite_db_error(error_message: str, chat_history):
     # Use filtered history
@@ -295,13 +319,16 @@ Task:
     print("=========================================================\n")
 
     try:
+        if model is None:
+            raise RuntimeError("LLM model not configured")
         res = model.generate_content(prompt)
         return (res.text or "").strip()
     except Exception as e:
         return f"An error occurred: {error_message}"
 
+
 def suggest_next_commands(schema, chat_history):
-    schema_str = format_schema(schema)
+    schema_str = format_schema(schema or {})
     # Use filtered history
     filtered_history = filter_history_for_llm(chat_history or [])
 
@@ -328,25 +355,94 @@ Task:
     print("============================================================\n")
 
     try:
+        if model is None:
+            raise RuntimeError("LLM model not configured")
         res = model.generate_content(prompt)
         suggestions = (res.text or "").strip()
         return suggestions
     except Exception:
         return "- show customers\n- list products\n- latest orders"
 
-def detect_chartable(columns, rows):
-    if not columns or not rows:
-        return False, None
-    if len(columns) < 2:
-        return False, None
+
+# (Removed detect_chartable; chart selection now produced by LLM as a suggestion only)
+
+# ----------------------------------------------------
+# New helpers for chart flow
+# ----------------------------------------------------
+
+
+def convert_to_sql(user_query: str, schema: Optional[dict] = None) -> str:
+    """Thin wrapper to generate SQL for a standalone user query.
+    Uses existing generate_sql_from_prompt and optional schema context.
+    """
+    return generate_sql_from_prompt(user_query, schema if isinstance(schema, dict) else None)
+
+
+"""Old suggest_chart removed: we don't send dataframes or previews to AI."""
+
+
+# ----------------------------------------------------
+# New: privacy-preserving SQL + chart_type + confidence
+# ----------------------------------------------------
+
+def generate_sql_and_chart(user_query: str, schema: Optional[dict] = None) -> dict:
+    """
+    Returns dict: { sql: str, confidence: float (0..1), chart_type: str|"" }
+    AI sees only schema summary + NL query; never sees data rows.
+    """
+    schema_str = format_schema(schema or {})
+    prompt = f"""
+You are an expert SQL assistant.
+
+Inputs:
+- Database schema summary (tables, columns, types).
+- A natural-language user query.
+
+Tasks:
+1) Generate ONE valid PostgreSQL SQL query that answers the user query using ONLY the provided schema.
+2) Estimate a confidence score in [0,1] based on how well the intent maps to schema and columns.
+3) Suggest a chart type from: bar, line, pie, scatter. Base this on the user intent and the SELECT list in your SQL.
+
+Rules:
+- Output JSON only with keys: sql, confidence, chart_type.
+- No markdown, no code fences, no explanations.
+
+Schema:
+{schema_str}
+
+User query:
+{user_query}
+
+JSON:
+""".strip()
+
     try:
-        sample_values = [r[1] for r in rows[:10]]
-        numeric = all(
-            isinstance(v, (int, float)) or (isinstance(v, str) and v.replace('.', '', 1).isdigit())
-            for v in sample_values if v is not None
-        )
-    except Exception:
-        numeric = False
-    if not numeric:
-        return False, None
-    return True, "bar"
+        if model is None:
+            raise RuntimeError("LLM model not configured")
+        res = model.generate_content(prompt)
+        text = (res.text or "").strip()
+
+        # Extract JSON
+        try:
+            data = json.loads(text)
+        except Exception:
+            m = re.search(r"\{[\s\S]*\}", text)
+            if not m:
+                raise ValueError("No JSON found in LLM response")
+            data = json.loads(m.group(0))
+
+        sql = _strip_markdown_fences(str(data.get("sql", "")).strip())
+        try:
+            confidence = float(data.get("confidence", 0.0))
+        except Exception:
+            confidence = 0.0
+        confidence = max(0.0, min(1.0, confidence))
+
+        chart_type = (str(data.get("chart_type", "")).strip().lower()
+                      if data.get("chart_type") is not None else "")
+        if chart_type not in {"", "bar", "line", "pie", "scatter"}:
+            chart_type = ""
+
+        return {"sql": sql, "confidence": confidence, "chart_type": chart_type}
+    except Exception as e:
+        return {"sql": f"Error: {str(e)}", "confidence": 0.0, "chart_type": ""}

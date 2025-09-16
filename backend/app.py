@@ -9,9 +9,6 @@ from flask_jwt_extended import (
 )
 from jwt.exceptions import ExpiredSignatureError
 import datetime
-import io
-import base64
-import matplotlib.pyplot as plt
 
 from db import (
     execute_query,
@@ -27,8 +24,7 @@ from nlp_to_sql import (
     maybe_generate_clarifier,
     rewrite_db_error,
     suggest_next_commands,
-    detect_chartable,
-    cache_ai_table
+    generate_sql_and_chart,
 )
 
 # -------------------- App + Extensions --------------------
@@ -96,7 +92,7 @@ def signup():
 
     existing = execute_query(
         "SELECT user_id FROM private.users WHERE email = %s", (email,))
-    if existing and len(existing.get("rows", [])) > 0:
+    if isinstance(existing, list) and len(existing) > 0:
         return jsonify({"error": "Email already in use"}), 400
 
     hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
@@ -130,11 +126,14 @@ def login():
             print(f"User not found: {email}")
             return jsonify({"error": "Invalid credentials"}), 401
 
-        user_id = user[0]["user_id"]
-        hashed_pw = user[0]["hashed_pw"]
-        role = user[0]["role"]
+        first_row = user[0] if isinstance(user, list) else None
+        user_id = first_row.get("user_id") if isinstance(
+            first_row, dict) else None
+        hashed_pw = first_row.get("hashed_pw") if isinstance(
+            first_row, dict) else None
+        role = first_row.get("role") if isinstance(first_row, dict) else None
 
-        if not bcrypt.check_password_hash(hashed_pw, password):
+        if not hashed_pw or not bcrypt.check_password_hash(hashed_pw, password):
             print(f"Password check failed for: {email}")
             return jsonify({"error": "Invalid credentials"}), 401
 
@@ -195,7 +194,6 @@ app.register_blueprint(api_bp)
 
 # -------------------- In-memory chat history (MVP) --------------------
 
-last_results_cache = {}
 pending_queries = {}
 
 
@@ -304,7 +302,7 @@ def ask():
     user_info = execute_query(
         "SELECT role FROM private.users WHERE user_id = %s", (user_id,))
     user_role = None
-    if user_info and len(user_info) > 0:
+    if isinstance(user_info, list) and len(user_info) > 0 and isinstance(user_info[0], dict):
         user_role = user_info[0].get("role", None)
 
     if not user_input:
@@ -338,20 +336,18 @@ def ask():
 
     try:
         results_raw = execute_query(sql_query)
-        if isinstance(results_raw, dict):
+        if isinstance(results_raw, list):
+            rows = results_raw
+            cols = list(results_raw[0].keys()) if results_raw and isinstance(
+                results_raw[0], dict) else []
+        elif isinstance(results_raw, dict):
             cols = results_raw.get("columns", [])
             rows = results_raw.get("rows", [])
         else:
             cols = []
-            rows = results_raw
+            rows = []
 
-        if cols and rows:
-            last_results_cache[user_id] = {"columns": cols, "rows": rows}
-            cache_ai_table(user_id, cols, rows)
-            chartable, chart_type = detect_chartable(cols, rows)
-            if chartable:
-                chart_prompt = "Do you want me to generate a chart for the above table?"
-                remember(user_id, "assistant", chart_prompt)
+    # Chart generation is now handled by the /generate_chart endpoint.
 
         remember(user_id, "assistant", f"Generated SQL:\n{sql_query}")
         result_payload = {"type": "results",
@@ -362,8 +358,9 @@ def ask():
             "sql": sql_query,
             "results": rows,
             "columns": cols,
-            "chartable": chartable if 'chartable' in locals() else False,
-            "chart_type": chart_type if 'chart_type' in locals() else None,
+            # Chart info omitted in new flow; use /generate_chart for visuals
+            "chartable": True,
+            "chart_type": None,
             "history": get_history(user_id)
         }), 200
     except Exception as e:
@@ -397,12 +394,16 @@ def confirm_query():
     sql = pending_queries[session_id]["sql"]
     try:
         results_raw = execute_query(sql)
-        if isinstance(results_raw, dict) and "rows" in results_raw:
-            cols = results_raw.get("columns")
-            rows = results_raw.get("rows")
-        else:
-            cols = None
+        if isinstance(results_raw, list):
             rows = results_raw
+            cols = list(results_raw[0].keys()) if results_raw and isinstance(
+                results_raw[0], dict) else []
+        elif isinstance(results_raw, dict):
+            cols = results_raw.get("columns", [])
+            rows = results_raw.get("rows", [])
+        else:
+            cols = []
+            rows = []
 
         remember(session_id, "assistant", f"✅ Query executed.")
         result_payload = {"type": "results",
@@ -432,66 +433,61 @@ def cancel_query():
 
 # -------------------- Chart --------------------
 
+# New Chart Generation Flow
 
-@app.route('/chart', methods=['POST'])
+
+@app.route('/generate_chart', methods=['POST'])
 @jwt_required()
-def generate_chart():
+def generate_chart_new():
     data = request.get_json(silent=True) or {}
-    session_id = data.get('session_id') or data.get('sessionId') or 'default'
-    chart_type = data.get('chartType') or data.get('chart_type')
+    user_query = data.get("query")
 
-    if session_id not in last_results_cache:
-        return jsonify({"error": "No recent results found for this session"}), 400
+    if not user_query:
+        return jsonify({"error": "No query provided"}), 400
 
-    results = last_results_cache[session_id]
-    cols, rows = results["columns"], results["rows"]
-
-    chartable, detected_chart_type = detect_chartable(cols, rows)
-    if not chartable:
-        return jsonify({"error": "Data not suitable for charting"}), 400
-
-    x_key = str(cols[0]).lower()
-    y_key = str(cols[1]).lower()
-    chart_config = {
-        "type": chart_type or detected_chart_type,
-        "x": x_key,
-        "y": y_key,
-        "data": [{x_key: r[0], y_key: r[1]} for r in rows[:50]]
-    }
+    # Ensure schema is available for the current user to guide SQL generation
+    user_id = get_jwt_identity()
+    schema = get_cached_schema(user_id)
+    if not schema:
+        schema = cache_user_schema(user_id)
 
     try:
-        fig, ax = plt.subplots()
-        x_vals = [r[0] for r in rows[:50]]
-        y_vals = [r[1] for r in rows[:50]]
-        if chart_type == "bar" or detected_chart_type == "bar":
-            ax.bar(x_vals, y_vals)
-            ax.set_xlabel(cols[0])
-            ax.set_ylabel(cols[1])
-        elif chart_type == "line" or detected_chart_type == "line":
-            ax.plot(x_vals, y_vals, marker='o')
-            ax.set_xlabel(cols[0])
-            ax.set_ylabel(cols[1])
-        elif chart_type == "pie" or detected_chart_type == "pie":
-            ax.pie(y_vals, labels=x_vals, autopct='%1.1f%%')
+        # Step 1: Ask AI for SQL + confidence + chart_type (no data sent to AI)
+        meta = generate_sql_and_chart(user_query, schema)
+        sql_query = meta.get("sql", "")
+        confidence = meta.get("confidence", 0.0)
+        chart_type = meta.get("chart_type", "")
+
+        if not sql_query or sql_query.lower().startswith("error:"):
+            return jsonify({"error": "Failed to generate SQL", "meta": meta}), 500
+
+        # Reject write queries (read-only endpoint)
+        if is_write_query(sql_query):
+            return jsonify({"error": "Read-only endpoint"}), 403
+
+        # Step 2: Execute SQL on our DB only
+        results = execute_query(sql_query)
+        if isinstance(results, list):
+            rows = results
+            columns = list(results[0].keys()) if results and isinstance(
+                results[0], dict) else []
+        elif isinstance(results, dict):
+            rows = results.get("rows", [])
+            columns = results.get("columns", [])
         else:
-            plt.close(fig)
-            return jsonify({"error": f"Chart type '{chart_type or detected_chart_type}' not supported for image rendering."}), 400
+            rows = []
+            columns = []
 
-        chart_title = (chart_type or detected_chart_type or "").capitalize()
-        ax.set_title(f"{chart_title} Chart")
-        buf = io.BytesIO()
-        plt.tight_layout()
-        plt.savefig(buf, format='png')
-        plt.close(fig)
-        buf.seek(0)
-        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        # Step 3: Return only results + suggestions
+        return jsonify({
+            "sql": sql_query,
+            "confidence": confidence,
+            "chart_type": chart_type,
+            "columns": columns,
+            "rows": rows
+        }), 200
     except Exception as e:
-        return jsonify({"error": f"Chart rendering failed: {str(e)}"}), 500
-
-    return jsonify({
-        "chart": chart_config,
-        "chart_image_base64": img_base64
-    }), 200
+        return jsonify({"error": str(e)}), 500
 
 # -------------------- Chat Helpers --------------------
 
@@ -569,9 +565,12 @@ def debug_routes():
     """Debug endpoint to see all registered routes"""
     routes = []
     for rule in app.url_map.iter_rules():
+        methods = []
+        if getattr(rule, 'methods', None):
+            methods = list(rule.methods)  # type: ignore[arg-type]
         routes.append({
             "endpoint": rule.endpoint,
-            "methods": list(rule.methods),
+            "methods": methods,
             "rule": str(rule)
         })
     return jsonify({"routes": routes}), 200
@@ -594,6 +593,9 @@ if __name__ == '__main__':
     print("🚀 Starting Flask app...")
     print("📋 Registered routes:")
     for rule in app.url_map.iter_rules():
-        print(f"  {rule.endpoint}: {list(rule.methods)} {rule}")
+        methods = []
+        if getattr(rule, 'methods', None):
+            methods = list(rule.methods)  # type: ignore[arg-type]
+        print(f"  {rule.endpoint}: {methods} {rule}")
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
