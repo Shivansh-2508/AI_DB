@@ -106,43 +106,74 @@ def signup():
 
 @api_bp.route('/auth/login', methods=['POST'])
 def login():
-    try:
-        data = request.get_json() or {}
-        email = data.get('email')
-        password = data.get('password')
+    # Parse JSON safely to avoid BadRequest exceptions on invalid/missing JSON
+    data = request.get_json(silent=True) or {}
+    email = str(data.get('email') or '').strip()
+    password = str(data.get('password') or '')
 
+    if not email or not password:
+        return jsonify({"error": "email and password required"}), 400
+
+    try:
         print(f"Login attempt for email: {email}")
 
-        if not email or not password:
-            return jsonify({"error": "email and password required"}), 400
-
-        rows = execute_query(
+        result = execute_query(
             "SELECT user_id, hashed_pw, role FROM private.users WHERE email = %s",
             (email,)
         )
 
-        if not rows:
+        # Normalize DB result to a single row object
+        row = None
+        if isinstance(result, list) and len(result) > 0:
+            row = next(iter(result), None)
+        elif isinstance(result, dict):
+            rows = result.get("rows")
+            if isinstance(rows, list) and rows:
+                for _item in rows:
+                    row = _item
+                    break
+
+        if not row:
             print(f"User not found: {email}")
             return jsonify({"error": "Invalid credentials"}), 401
 
-        first_row = rows[0]
-
-        # 🔑 Handle both dict and tuple return types
-        if isinstance(first_row, dict):
-            user_id = first_row.get("user_id")
-            hashed_pw = first_row.get("hashed_pw")
-            role = first_row.get("role")
-        elif isinstance(first_row, tuple):
-            user_id, hashed_pw, role = first_row
+        # Extract fields from either dict or tuple/list
+        if isinstance(row, dict):
+            user_id = row.get("user_id") or row.get("USER_ID") or row.get("id")
+            hashed_pw = row.get("hashed_pw") or row.get(
+                "HASHED_PW") or row.get("password")
+            role = row.get("role") or row.get("ROLE") or "user"
+        elif isinstance(row, (tuple, list)):
+            try:
+                user_id, hashed_pw, role = row[0], row[1], row[2]
+            except Exception:
+                print("Unexpected row length/structure for tuple result")
+                return jsonify({"error": "Internal server error"}), 500
         else:
-            print("Unexpected row type:", type(first_row))
+            print("Unexpected row type:", type(row))
             return jsonify({"error": "Internal server error"}), 500
 
-        # Password validation
-        if not hashed_pw or not bcrypt.check_password_hash(hashed_pw, password):
-            print(f"Password check failed for: {email}")
+        # Ensure hashed_pw is a string (decode if DB returned bytes/memoryview)
+        if isinstance(hashed_pw, (bytes, bytearray, memoryview)):
+            try:
+                hashed_pw = bytes(hashed_pw).decode("utf-8", errors="ignore")
+            except Exception:
+                return jsonify({"error": "Internal server error"}), 500
+
+        # Validate password using bcrypt
+        if not hashed_pw:
+            print(f"Missing hash for: {email}")
+            return jsonify({"error": "Invalid credentials"}), 401
+        try:
+            if not bcrypt.check_password_hash(hashed_pw, password):
+                print(f"Password check failed for: {email}")
+                return jsonify({"error": "Invalid credentials"}), 401
+        except Exception as _bcrypt_err:
+            # Any unexpected hash format issues -> treat as invalid
+            print(f"Bcrypt error for {email}: {_bcrypt_err}")
             return jsonify({"error": "Invalid credentials"}), 401
 
+        # Create JWT with user_id as identity (string)
         access_token = create_access_token(identity=str(user_id))
         user_data = {
             "id": user_id,
@@ -158,56 +189,8 @@ def login():
         }), 200
 
     except Exception as e:
+        # Catch-all to ensure JSON error response instead of HTML 500
         print(f"❌ Login error: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
-    try:
-        data = request.get_json() or {}
-        email = data.get('email')
-        password = data.get('password')
-
-        print(f"Login attempt for email: {email}")  # Debug log
-
-        if not email or not password:
-            print("Missing email or password")
-            return jsonify({"error": "email and password required"}), 400
-
-        user = execute_query(
-            "SELECT user_id, hashed_pw, role FROM private.users WHERE email = %s",
-            (email,)
-        )
-
-        if not user or len(user) == 0:
-            print(f"User not found: {email}")
-            return jsonify({"error": "Invalid credentials"}), 401
-
-        first_row = user[0] if isinstance(user, list) else None
-        user_id = first_row.get("user_id") if isinstance(
-            first_row, dict) else None
-        hashed_pw = first_row.get("hashed_pw") if isinstance(
-            first_row, dict) else None
-        role = first_row.get("role") if isinstance(first_row, dict) else None
-
-        if not hashed_pw or not bcrypt.check_password_hash(hashed_pw, password):
-            print(f"Password check failed for: {email}")
-            return jsonify({"error": "Invalid credentials"}), 401
-
-        # Use user_id as string for JWT identity
-        access_token = create_access_token(identity=str(user_id))
-        # Return user data with 'id' field for frontend consistency
-        user_data = {
-            "id": user_id,
-            "user_id": user_id,
-            "email": email,
-            "role": role
-        }
-        print(f"Login successful for: {email}, token created")
-        return jsonify({
-            "access_token": access_token,
-            "user": user_data
-        }), 200
-
-    except Exception as e:
-        print(f"Login error: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
 
