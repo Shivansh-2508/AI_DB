@@ -111,6 +111,60 @@ def login():
         email = data.get('email')
         password = data.get('password')
 
+        print(f"Login attempt for email: {email}")
+
+        if not email or not password:
+            return jsonify({"error": "email and password required"}), 400
+
+        rows = execute_query(
+            "SELECT user_id, hashed_pw, role FROM private.users WHERE email = %s",
+            (email,)
+        )
+
+        if not rows:
+            print(f"User not found: {email}")
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        first_row = rows[0]
+
+        # 🔑 Handle both dict and tuple return types
+        if isinstance(first_row, dict):
+            user_id = first_row.get("user_id")
+            hashed_pw = first_row.get("hashed_pw")
+            role = first_row.get("role")
+        elif isinstance(first_row, tuple):
+            user_id, hashed_pw, role = first_row
+        else:
+            print("Unexpected row type:", type(first_row))
+            return jsonify({"error": "Internal server error"}), 500
+
+        # Password validation
+        if not hashed_pw or not bcrypt.check_password_hash(hashed_pw, password):
+            print(f"Password check failed for: {email}")
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        access_token = create_access_token(identity=str(user_id))
+        user_data = {
+            "id": user_id,
+            "user_id": user_id,
+            "email": email,
+            "role": role
+        }
+
+        print(f"✅ Login successful for: {email}")
+        return jsonify({
+            "access_token": access_token,
+            "user": user_data
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Login error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+    try:
+        data = request.get_json() or {}
+        email = data.get('email')
+        password = data.get('password')
+
         print(f"Login attempt for email: {email}")  # Debug log
 
         if not email or not password:
@@ -358,11 +412,19 @@ def ask():
             "sql": sql_query,
             "results": rows,
             "columns": cols,
-            # Chart info omitted in new flow; use /generate_chart for visuals
-            "chartable": True,
-            "chart_type": None,
             "history": get_history(user_id)
         }), 200
+
+        # return jsonify({
+        #     "sql": sql_query,
+        #     "results": rows,
+        #     "columns": cols,
+        #     # Chart info omitted in new flow; use /generate_chart for visuals
+        #     "chartable": True,
+        #     "chart_type": None,
+        #     "history": get_history(user_id)
+        # }), 200
+
     except Exception as e:
         friendly_error = rewrite_db_error(str(e), get_history(user_id))
         remember(user_id, "assistant", f"❌ {friendly_error}")

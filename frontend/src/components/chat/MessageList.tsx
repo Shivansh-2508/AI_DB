@@ -61,45 +61,67 @@ export default function MessageList({ messages, isLoading, schemaLoading }: Mess
     );
   };
 
-  // Chart generation per message
+  // Chart generation per message (new privacy-preserving flow)
   const handleGenerateChart = async (msg: Message) => {
     if (!msg || !isTableResult(msg.results)) return;
     setChartLoading(prev => ({ ...prev, [msg.id]: true }));
     try {
-      const columns = msg.results.columns;
-      const rows = msg.results.rows;
-      const x = columns[0];
-      const y = columns[1];
-      const safeRows: Record<string, string | number>[] = rows.map(row => {
-        const safeRow: Record<string, string | number> = {};
-        for (const key of Object.keys(row)) {
-          const val = row[key];
-          safeRow[key] = typeof val === 'number' || typeof val === 'string' ? val : String(val);
-        }
-        return safeRow;
-      });
-      const chartConfig: ChartConfig = {
-        type: "bar",
-        x,
-        y,
-        data: safeRows
-      };
+      // Find the user query that led to this assistant message
+      const idx = messages.findIndex(m => m.id === msg.id);
+      const prevUser = idx > 0 ? [...messages.slice(0, idx)].reverse().find(m => m.isUser || m.type === "user") : undefined;
+      const query = (prevUser?.text || "").trim();
+      if (!query) {
+        console.warn("No user query found prior to results; cannot generate chart.");
+        setChartLoading(prev => ({ ...prev, [msg.id]: false }));
+        return;
+      }
+
       const base = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:5000";
-      const res = await fetch(`${base}/chart`, {
+      const res = await fetch(`${base}/generate_chart`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
-        body: JSON.stringify({
-          // session_id removed; user_id handled by backend via JWT
-          table: { columns, rows },
-          chart: chartConfig
-        })
+        body: JSON.stringify({ query })
       });
       const data = await res.json();
       if (res.status === 401) {
         logout();
         return;
       }
-      setCharts(prev => ({ ...prev, [msg.id]: data.chart || chartConfig }));
+
+      const { columns = [], rows = [], chart_type = "", confidence = 0 } = data || {};
+      if (!Array.isArray(columns) || columns.length < 2 || !Array.isArray(rows) || rows.length <= 1) {
+        console.warn("Backend did not return enough data to chart.");
+        setChartLoading(prev => ({ ...prev, [msg.id]: false }));
+        return;
+      }
+
+      // Optional: gate on low confidence
+      if (typeof confidence === "number" && confidence < 0.6) {
+        const proceed = typeof window !== 'undefined' ? window.confirm("The AI isn't very confident in this chart (confidence < 0.6). Proceed?") : true;
+        if (!proceed) {
+          setChartLoading(prev => ({ ...prev, [msg.id]: false }));
+          return;
+        }
+      }
+
+      // Coerce row values to string|number for ChartConfig typing safety
+      const safeRows: Record<string, string | number>[] = (rows as Record<string, unknown>[]).map(row => {
+        const out: Record<string, string | number> = {};
+        for (const k of Object.keys(row)) {
+          const v: unknown = row[k as keyof typeof row];
+          out[k] = (typeof v === 'number' || typeof v === 'string') ? v : (v == null ? '' : String(v));
+        }
+        return out;
+      });
+
+      const chartConfig: ChartConfig = {
+        type: chart_type || "bar",
+        x: String(columns[0]),
+        y: String(columns[1]),
+        data: safeRows,
+      };
+
+      setCharts(prev => ({ ...prev, [msg.id]: chartConfig }));
     } catch (err) {
       setCharts(prev => ({ ...prev, [msg.id]: null }));
       console.error("Chart generation failed:", err);

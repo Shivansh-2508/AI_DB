@@ -1,6 +1,4 @@
-// src/lib/api.ts
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:5000"; // Removed /api
-
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:5000"; 
 interface LoginResponse {
   access_token: string;
   user: {
@@ -27,132 +25,111 @@ export interface ProtectedResponse {
   message?: string;
 }
 
+// ----------------- AUTH FUNCTIONS -----------------
+
 async function signup(email: string, password: string): Promise<SignupResponse> {
   console.log("Attempting signup for:", email);
-  
+
   const res = await fetch(`${BASE_URL}/api/auth/signup`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
 
   console.log("Signup response status:", res.status);
 
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(`Signup failed with status ${res.status}`);
+  }
+
   if (!res.ok) {
-    let errorMessage;
-    try {
-      const err = await res.json();
-      errorMessage = err.error || err.message || `Signup failed with status ${res.status}`;
-    } catch {
-      errorMessage = `Signup failed with status ${res.status}`;
-    }
+    const errorMessage =
+      data.error || data.message || `Signup failed with status ${res.status}`;
+    console.error("Signup error details:", data);
     throw new Error(errorMessage);
   }
 
-  const result = await res.json();
-  console.log("Signup success:", result);
-  return result;
+  console.log("Signup success:", data);
+  return data;
 }
 
 async function login(email: string, password: string): Promise<LoginResponse> {
   console.log("Attempting login for:", email);
-  
+
   const res = await fetch(`${BASE_URL}/api/auth/login`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
 
   console.log("Login response status:", res.status);
 
+  let data: any;
+  try {
+    data = await res.json(); // ✅ Parse once
+  } catch {
+    throw new Error(`Login failed with status ${res.status}`);
+  }
+
   if (!res.ok) {
-    let errorMessage;
-    try {
-      const err = await res.json();
-      console.error("Login error details:", err);
-      errorMessage = err.error || err.message || `Login failed with status ${res.status}`;
-    } catch {
-      const textError = await res.text();
-      console.error("Login error text:", textError);
-      errorMessage = `Login failed with status ${res.status}`;
-    }
+    const errorMessage =
+      data.error || data.message || `Login failed with status ${res.status}`;
+    console.error("Login error details:", data);
     throw new Error(errorMessage);
   }
 
-  const result = await res.json();
-  console.log("Login success. Token received:", !!result.access_token);
-  return result;
+  console.log("Login success. Token received:", !!data.access_token);
+  return data;
 }
 
 async function getProtected(accessToken: string): Promise<ProtectedResponse> {
   console.log("🔍 Making protected request...");
   console.log("🔑 Token preview:", accessToken.substring(0, 20) + "...");
-  
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${accessToken}`,
-  };
-
-  console.log("📤 Request headers:", headers);
 
   const res = await fetch(`${BASE_URL}/api/auth/protected`, {
     method: "GET",
-    headers,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${accessToken}`,
+    },
   });
 
   console.log("📥 Response status:", res.status);
-  console.log("📥 Response headers:", Object.fromEntries(res.headers.entries()));
 
-  // Always try to get the response body for debugging
-  let responseBody;
+  let data: any;
   let isJson = false;
-
   try {
-    const contentType = res.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      responseBody = await res.json();
+    const contentType = res.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      data = await res.json();
       isJson = true;
-      console.log("📄 Response JSON:", responseBody);
     } else {
-      responseBody = await res.text();
-      console.log("📄 Response Text:", responseBody);
+      const text = await res.text();
+      data = { message: text };
     }
-  } catch (parseError) {
-    console.error("❌ Error parsing response:", parseError);
-    responseBody = { error: "Could not parse response" };
+  } catch (e) {
+    console.error("❌ Error parsing protected response:", e);
+    throw new Error(`Protected request failed with status ${res.status}`);
   }
 
   if (!res.ok) {
-    let errorMessage;
-    
-    if (isJson && responseBody) {
-      errorMessage = responseBody.error || responseBody.message || responseBody.detail || `Protected request failed with status ${res.status}`;
-      console.error("❌ API Error (JSON):", responseBody);
-    } else {
-      errorMessage = responseBody || `Protected request failed with status ${res.status}`;
-      console.error("❌ API Error (Text):", responseBody);
-    }
-    
-    // Log the full error details for debugging
-    console.error("❌ Full error context:", {
-      status: res.status,
-      statusText: res.statusText,
-      headers: Object.fromEntries(res.headers.entries()),
-      body: responseBody
-    });
-    
+    const errorMessage =
+      (isJson && (data.error || data.message || data.detail)) ||
+      data.message ||
+      `Protected request failed with status ${res.status}`;
+    console.error("❌ API Error details:", data);
     throw new Error(errorMessage);
   }
 
-  console.log("✅ Protected route success:", responseBody);
-  return responseBody;
+  console.log("✅ Protected route success:", data);
+  return data;
 }
 
-// Helper function to test different authorization header formats
+// ----------------- DEBUG HELPER -----------------
+
 async function testProtectedWithDifferentHeaders(accessToken: string) {
   const testCases = [
     { name: "Bearer Token", headers: { "Authorization": `Bearer ${accessToken}` }},
@@ -167,19 +144,17 @@ async function testProtectedWithDifferentHeaders(accessToken: string) {
   for (const testCase of testCases) {
     try {
       console.log(`\n🔬 Testing: ${testCase.name}`);
-      
+
       const res = await fetch(`${BASE_URL}/api/auth/protected`, {
         method: "GET",
-        headers: Object.fromEntries(
-          Object.entries({
-            "Content-Type": "application/json",
-            ...testCase.headers,
-          }).filter((entry) => entry[1] !== undefined)
-        ),
+        headers: {
+          "Content-Type": "application/json",
+          ...testCase.headers,
+        },
       });
 
       console.log(`📊 ${testCase.name} - Status: ${res.status}`);
-      
+
       if (res.ok) {
         const data = await res.json();
         console.log(`✅ ${testCase.name} - SUCCESS!`, data);
@@ -192,15 +167,17 @@ async function testProtectedWithDifferentHeaders(accessToken: string) {
       console.log(`❌ ${testCase.name} - Error:`, error);
     }
   }
-  
+
   return { success: false };
 }
+
+// ----------------- EXPORT -----------------
 
 const api = {
   signup,
   login,
   getProtected,
-  testProtectedWithDifferentHeaders, // Export for debugging
+  testProtectedWithDifferentHeaders, // for debugging
 };
 
 export default api;
