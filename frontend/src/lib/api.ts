@@ -38,7 +38,7 @@ async function signup(email: string, password: string): Promise<SignupResponse> 
 
   console.log("Signup response status:", res.status);
 
-  let data: any;
+  let data: unknown;
   try {
     data = await res.json();
   } catch {
@@ -46,14 +46,16 @@ async function signup(email: string, password: string): Promise<SignupResponse> 
   }
 
   if (!res.ok) {
+    const d = data as Record<string, unknown> | undefined;
     const errorMessage =
-      data.error || data.message || `Signup failed with status ${res.status}`;
-    console.error("Signup error details:", data);
+      (d && (typeof d.error === 'string' ? d.error : typeof d.message === 'string' ? d.message : undefined))
+      || `Signup failed with status ${res.status}`;
+    console.error("Signup error details:", d ?? data);
     throw new Error(errorMessage);
   }
 
   console.log("Signup success:", data);
-  return data;
+  return data as SignupResponse;
 }
 
 async function login(email: string, password: string): Promise<LoginResponse> {
@@ -67,7 +69,7 @@ async function login(email: string, password: string): Promise<LoginResponse> {
 
   console.log("Login response status:", res.status);
 
-  let data: any;
+  let data: unknown;
   try {
     data = await res.json(); // ✅ Parse once
   } catch {
@@ -75,14 +77,17 @@ async function login(email: string, password: string): Promise<LoginResponse> {
   }
 
   if (!res.ok) {
+    const d = data as Record<string, unknown> | undefined;
     const errorMessage =
-      data.error || data.message || `Login failed with status ${res.status}`;
-    console.error("Login error details:", data);
+      (d && (typeof d.error === 'string' ? d.error : typeof d.message === 'string' ? d.message : undefined))
+      || `Login failed with status ${res.status}`;
+    console.error("Login error details:", d ?? data);
     throw new Error(errorMessage);
   }
 
-  console.log("Login success. Token received:", !!data.access_token);
-  return data;
+  const out = data as LoginResponse;
+  console.log("Login success. Token received:", !!out.access_token);
+  return out;
 }
 
 async function getProtected(accessToken: string): Promise<ProtectedResponse> {
@@ -99,7 +104,7 @@ async function getProtected(accessToken: string): Promise<ProtectedResponse> {
 
   console.log("📥 Response status:", res.status);
 
-  let data: any;
+  let data: unknown;
   let isJson = false;
   try {
     const contentType = res.headers.get("content-type");
@@ -116,27 +121,28 @@ async function getProtected(accessToken: string): Promise<ProtectedResponse> {
   }
 
   if (!res.ok) {
+    const d = data as Record<string, unknown> | undefined;
     const errorMessage =
-      (isJson && (data.error || data.message || data.detail)) ||
-      data.message ||
+      (isJson && d && (typeof d.error === 'string' ? d.error : typeof d.message === 'string' ? d.message : typeof d.detail === 'string' ? d.detail : undefined)) ||
+      (d && typeof (d as Record<string, unknown>)["message"] === 'string' ? (d as Record<string, unknown>)["message"] as string : undefined) ||
       `Protected request failed with status ${res.status}`;
-    console.error("❌ API Error details:", data);
+    console.error("❌ API Error details:", d ?? data);
     throw new Error(errorMessage);
   }
 
   console.log("✅ Protected route success:", data);
-  return data;
+  return data as ProtectedResponse;
 }
 
 // ----------------- DEBUG HELPER -----------------
 
 async function testProtectedWithDifferentHeaders(accessToken: string) {
-  const testCases = [
-    { name: "Bearer Token", headers: { "Authorization": `Bearer ${accessToken}` }},
-    { name: "Direct Token", headers: { "Authorization": accessToken }},
-    { name: "X-Access-Token", headers: { "x-access-token": accessToken }},
-    { name: "X-Auth-Token", headers: { "x-auth-token": accessToken }},
-    { name: "Token Header", headers: { "token": accessToken }},
+  const testCases: Array<{ name: string; headers: Record<string, string> }> = [
+    { name: "Bearer Token", headers: { Authorization: `Bearer ${accessToken}` } },
+    { name: "Direct Token", headers: { Authorization: accessToken } },
+    { name: "X-Access-Token", headers: { "x-access-token": accessToken } },
+    { name: "X-Auth-Token", headers: { "x-auth-token": accessToken } },
+    { name: "Token Header", headers: { token: accessToken } },
   ];
 
   console.log("🧪 Testing different header formats...");
@@ -147,10 +153,7 @@ async function testProtectedWithDifferentHeaders(accessToken: string) {
 
       const res = await fetch(`${BASE_URL}/api/auth/protected`, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          ...testCase.headers,
-        },
+        headers: { "Content-Type": "application/json", ...testCase.headers } as Record<string, string>,
       });
 
       console.log(`📊 ${testCase.name} - Status: ${res.status}`);

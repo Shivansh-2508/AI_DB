@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import ChatContainer from "@/components/chat/NewChatContainer";
 import { useAuth } from "@/context/AuthContext";
 // ...existing code...

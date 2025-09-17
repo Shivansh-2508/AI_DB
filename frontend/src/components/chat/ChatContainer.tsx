@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback, createContext, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Database } from "lucide-react";
 import ChatInput from "./ChatInput";
@@ -207,7 +207,7 @@ export default function ChatContainer() {
         // If backend requires user_id, add: user_id: user?.id
       })
     }).catch(err => console.error("Failed to save message to backend", err));
-  }, [generateMessageId, userEmail, authHeaders]);
+  }, [generateMessageId, authHeaders]);
 
   const updateActivity = useCallback(() => {
     // Only set isActive to true if not currently inactive
