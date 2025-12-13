@@ -13,7 +13,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 try:
     genai.configure(api_key=GOOGLE_API_KEY)  # type: ignore[attr-defined]
     _GM = getattr(genai, "GenerativeModel", None)
-    model = _GM('models/gemini-2.0-flash-001') if _GM else None
+    model = _GM('models/gemini-2.5-flash-lite')  if _GM else None
 except Exception:
     # Fallback: model will be referenced later and raise if used without proper config
     model = None
